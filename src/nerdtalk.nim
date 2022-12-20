@@ -9,9 +9,24 @@ import std/base64
 
 # -- XML-RPC --
 
+## `XML-RPC<http://xmlrpc.com/spec.md>`_ implementation in pure Nim.
+## 
+## Basic usage::
+##  type
+##    Acccount = object
+##      id: int
+##      name: string
+##      birthday: DateTime
+##  xmlRpcSpec:
+##    name: "update_account"
+##    params:
+##      id: int
+##      account: Account
+##  update_account(1001, Account(1001, "John", now()))
+
 type
-  #InvalidXmlRpcType = object of ValueError
-  XmlRpcDecodingException = object of ValueError
+  XmlRpcDecodingException* = object of ValueError ## \
+  ## Is thrown when an XML-RPC method response cannot be decoded
   XmlRpcItemKind* = enum
     xmlRpcInteger,
     xmlRpcBoolean,
@@ -21,7 +36,14 @@ type
     xmlRpcBase64,
     xmlRpcStruct,
     xmlRpcArray
-  XmlRpcResponseKind* = enum
+  XmlRpcResponseKind* = enum ## \
+  ## Discrimantor kind for XML-RPC responses
+  ## 
+  ## According to the XML-RPC spec, an XML-RPC response
+  ## is either a response with a sole `<params>` node or
+  ## a fault with a sole `<struct>` node with exactly 2
+  ## members.
+  ## 
     methodResponse, fault
   XmlRpcResponse* = object
     case k*: XmlRpcResponseKind
@@ -31,6 +53,8 @@ type
         code*: int
         str*: string
   XmlRpcType* = object
+    ## Base type for all XML-RPC types
+    ## 
     case k*: XmlRpcItemKind
       of xmlRpcInteger:
         fInt*: int
@@ -47,11 +71,26 @@ type
       of xmlRpcStruct:
         fStruct*: seq[(string, XmlRpcType)]
 
-template xrarray*() {.pragma.}
+template xrarray*() {.pragma.} ## \
+## Used to discriminate between XML-RPC structs
+## and XML-RPC arrays. The presence of this pragma
+## on an object type causes the `!:` macro to
+## generate an XML-RPC array.
+## 
+## Example::
+##  type
+##    Persons {.xrarray.} = object
+##      p: seq[string]
+## 
+## **Note**: The same warning applies for objects inheriting
+## from `RootObj`.
+## 
 
 proc `?:`*[T](encode: T): XmlRpcType =
-  ## Generic constructor for XmlRpcType of Base64
-  ## Note that `T` must have the operator `$` defined
+  ## Generic constructor for `XmlRpcType` of `Base64`.
+  ## 
+  ## Note that `T` must have the proc `$` defined for it
+  ## 
   result = XmlRpcType(k: xmlRpcBase64, fString: encode($encode))
 
 # Compile-time object helper types
@@ -68,7 +107,7 @@ type
         t: rType
         q: seq[(string, xType)]
 
-proc isXmlRpcArray(t: NimNode) : bool =
+proc isXmlRpcArray(t: NimNode): bool =
   ## Checks if a type definition has the {.xrarray.}
   ## pragma
   t.expectKind nnkTypeDef
@@ -104,9 +143,11 @@ proc getMembers(recList: NimNode): seq[(string, xType)] =
                     if kn.getImpl.isXmlRpcArray():
                       # Object had {.xrarray.} pragma
                       # Construct XmlRpcArrayType
-                      result.add((name, xType(k: seqKind, t: arrayType, q: getMembers(m))))
+                      result.add((name, xType(k: seqKind, t: arrayType,
+                          q: getMembers(m))))
                     else:
-                      result.add((name, xType(k: seqKind , t: structType, q: getMembers(m))))
+                      result.add((name, xType(k: seqKind, t: structType,
+                          q: getMembers(m))))
                   else:
                     # nnkEmptyNodes
                     discard
@@ -209,7 +250,7 @@ proc xmlRpcObjectConstruction(body: NimNode): NimNode =
     let q = `mems`
     XmlRpcType(k: xmlRpcStruct, fStruct: @q)
 
-proc xmlRpcArrayContsruction(body: NimNode) : NimNode =
+proc xmlRpcArrayContsruction(body: NimNode): NimNode =
   let typeImpl = body.getTypeImpl
   let recList = typeImpl[2]
 
@@ -224,9 +265,26 @@ proc xmlRpcArrayContsruction(body: NimNode) : NimNode =
     XmlRpcType(k: xmlRpcArray, fArray: @q)
 
 macro `!:`*(body: typed): untyped =
-  ## Construct XmlRpcTypes from
-  ##  - int, float, bool, string, char, or custom
-  ##    object types
+  ## Construct `XmlRpcType`s from
+  ## - `int`
+  ## - `float`
+  ## - `bool`
+  ## - `string`
+  ## - `char`
+  ## - `object`
+  ## 
+  ## Usage::
+  ##  let temp = !:2.0
+  ##  let result = getMethodCall("set_temp", temp)
+  ## 
+  ## **Warning**: The library is limited to `object`
+  ## types that **do not** inhereit from `RootObj`.
+  ## 
+  ## The reason for this is because `!:` constructs
+  ## an `XmlRpcType` by traversing the type implementation
+  ## at compile time. All fields are treated as public, breaking
+  ## basic OOP encapsulation.
+  ## 
   let node = body.getTypeImpl
   case node.typeKind:
     of ntyInt:
@@ -264,10 +322,10 @@ macro `!:`*(body: typed): untyped =
     else:
       error("Unspported type", body)
 
-proc deserialize(value: XmlNode) : XmlRpcType =
+proc deserialize(value: XmlNode): XmlRpcType =
   ## Helper proc for deserialization of XML-RPC value type
   let xmlType = value.tag
-  var r : XmlRpcType
+  var r: XmlRpcType
   case xmlType:
     of "int", "i4", "i8":
       try:
@@ -311,8 +369,8 @@ proc deserialize(value: XmlNode) : XmlRpcType =
       raise newException(XmlRpcDecodingException, "Received an invalid XMl-RPC response type. Invalid <param> type.")
   return r
 
-proc `:!`*(body: string) : XmlRpcResponse {.raises: [ XmlRpcDecodingException ].} =
-  ## Deserialization proc
+proc `:!`*(body: string): XmlRpcResponse {.raises: [XmlRpcDecodingException].} =
+  ## Deserialization proc for XML-RPC responses.
   var response: XmlNode
   try:
     response = parseXml(body)
@@ -323,7 +381,7 @@ proc `:!`*(body: string) : XmlRpcResponse {.raises: [ XmlRpcDecodingException ].
   if faults.len == 1:
     let fault = faults[0]
     let struct = fault[0][0]
-    var 
+    var
       code: int
       reason: string
     for child in struct:
@@ -347,7 +405,11 @@ proc `:!`*(body: string) : XmlRpcResponse {.raises: [ XmlRpcDecodingException ].
     raise newException(XmlRpcDecodingException, "Received an invalid XML-RPC response type. Expected a <fault> or <params>")
 
 macro xmlRpcSpecFromFile*(spec: static[string]): untyped =
-  ## Compile time code generation for specific domain
+  ## Compile time code generation from a XMl spec file.
+  ## 
+  ## The cousin of `xmlRpcSpec`, this macro generates code
+  ## from a file at compile-time.
+  ## 
   var specSource = staticRead(spec)
   var specXml = parseXml(specSource)
   var specs = newSeq[NimNode]()
@@ -359,7 +421,7 @@ macro xmlRpcSpecFromFile*(spec: static[string]): untyped =
     specFunc.add(ident(mName.innerText))
     specFunc.add(newEmptyNode(), newEmptyNode())
     let paramsNode = newNimNode(nnkFormalParams)
-    paramsNode.add(ident("XmlNode"))
+    paramsNode.add(ident("string"))
 
     var paramsBody = newSeq[NimNode]()
     paramsBody.add(newLit(mName.innerText))
@@ -368,7 +430,8 @@ macro xmlRpcSpecFromFile*(spec: static[string]): untyped =
       let paramType = param[1]
       let paramNameNode = ident(paramName.innerText)
       let paramTypeNode = ident(paramType.innerText)
-      let paramNode = newTree(nnkIdentDefs, paramNameNode, paramTypeNode, newEmptyNode())
+      let paramNode = newTree(nnkIdentDefs, paramNameNode, paramTypeNode,
+          newEmptyNode())
       paramsNode.add(paramNode)
       paramsBody.add(newTree(nnkPrefix, ident("!:"), paramNameNode))
     specFunc.add(paramsNode)
@@ -389,39 +452,47 @@ proc getFuncName(name: NimNode): string =
   return funcName.strip(chars = {'\r', '\n'})
 
 macro xmlRpcSpec*(body: untyped): untyped =
-  ## DSL macro for XML-RPC specification
+  ## DSL macro for XML-RPC specification.
   ## 
-  ## The DSL is defined as follows:
-  ## xmlRpcSepc:
-  ##  name: <string>
-  ##  [params:
-  ##    <string>:<string>
-  ##    ...
-  ##  ]
+  ## Consumers of this library should use this or
+  ## its cousin `xmlRpcSpecFromFile` as it generates
+  ## code so it makes it easy to get XML-RPC calls 
+  ## using basic Nim types.
+  ##
+  ## The DSL is defined as follows::
+  ##  xmlRpcSpec:
+  ##   name: <string>
+  ##   [params:
+  ##     <string_wo_quotes>:<string>
+  ##     ...
+  ##   ]
   ## 
-  ## This macro generates code according to 
+  ## where `<string>` is a double-quoted string and
+  ## `<string_wo_quotes>` is a string without any quotes.
+  ##
+  ## This macro generates code according to
   ## the specifiction given.
-  ## 
-  ## Example:
-  ## xmlRpcSpec:
-  ##  name: "download_list"
-  ##  name: "d.name"
-  ##  params:
-  ##    hash: string
-  ## 
+  ##
+  ## Example::
+  ##  xmlRpcSpec:
+  ##   name: "download_list"
+  ##   name: "d.name"
+  ##   params:
+  ##     hash: string
+  ##
   ## The above example generates 2 functions with the names
   ## `download_list` and `d_name` (illegal characters within the
   ## function name are replaced with '_'). The first parameter
-  ## does not take any parameters so it's prototype is
-  ## `proc download_list() : XmlNode`. `d_name` does and thus
-  ## it's prototype is `proc d_name(hash: string) : XmlNode`.
+  ## does not take any parameters so it's prototype is::
+  ##  proc download_list() : string
   ## 
-  ## You can then use the following functions in Nim code:
-  ## 
-  ## .. code-block: nim
-  ## discard download_list()
-  ## discard d_name("2FDSF33DFDSJKB32423")
-  ## 
+  ## `d_name` does and thus it's prototype is::
+  ##  proc d_name(hash: string) : string
+  ##
+  ## You can then use the following functions in Nim code::
+  ##  discard download_list()
+  ##  discard d_name("2FDSF33DFDSJKB32423")
+  ##
   body.expectKind nnkStmtList
   var spec = newSeq[NimNode]()
   var funcs = newSeq[NimNode]()
@@ -443,7 +514,7 @@ macro xmlRpcSpec*(body: untyped): untyped =
         # All XML-RPC calls return XmlNode
         # This specific case creates a proc with zero parameters
         let paramsNode = newNimNode(nnkFormalParams)
-        paramsNode.add(ident("XmlNode"))
+        paramsNode.add(ident("string"))
         pastFunc.add(paramsNode)
         pastFunc.add(newEmptyNode(), newEmptyNode())
         let funcBody = newStmtList(newAssignment(ident("result"), newCall(ident(
@@ -457,7 +528,7 @@ macro xmlRpcSpec*(body: untyped): untyped =
       let currentFunc = funcs.pop()
       # All XML-RPC calls return XmlNode
       let paramsNode = newNimNode(nnkFormalParams)
-      paramsNode.add(ident("XmlNode"))
+      paramsNode.add(ident("string"))
       for param in params:
         let paramName = param[0]
         let paramNameNode = ident(paramName.repr)
@@ -478,7 +549,8 @@ macro xmlRpcSpec*(body: untyped): untyped =
         let paramName = param[0]
         let paramNameNode = ident(paramName.repr)
         paramsBody.add(newTree(nnkPrefix, ident("!:"), paramNameNode))
-      funcbody.add(newAssignment(ident("result"), newCall(ident("getMethodCall"), paramsBody)))
+      funcbody.add(newAssignment(ident("result"), newCall(ident(
+          "getMethodCall"), paramsBody)))
       currentFunc.add(funcBody)
       spec.add(currentFunc)
     else:
@@ -489,7 +561,7 @@ macro xmlRpcSpec*(body: untyped): untyped =
     # All XML-RPC calls return XmlNode
     # This specific case creates a proc with zero parameters
     let paramsNode = newNimNode(nnkFormalParams)
-    paramsNode.add(ident("XmlNode"))
+    paramsNode.add(ident("string"))
     pastFunc.add(paramsNode)
     pastFunc.add(newEmptyNode(), newEmptyNode())
     let funcBody = newStmtList(newAssignment(ident("result"), newCall(ident(
@@ -562,8 +634,20 @@ proc serialize(this: XmlRpcType): XmlNode =
 
       result.add data
 
-proc getMethodCall*(name: string, params: varargs[XmlRpcType]): XmlNode =
-  ## Generate a `methodCall`
+proc getMethodCall*(name: string, params: varargs[XmlRpcType]): string =
+  ## Generate a `methodCall` given `name` and a list of `XmlRpcType`s.
+  ## 
+  ## Returns a `string` representation of the XML-RPC call.
+  ## 
+  ## Consumers of this library shouldn't need to use this but is provided
+  ## for completeness. The macros `xmlRpcSpec` and `xmlRpcSpecFromFile` 
+  ## both construct `procs` that have Nim types as parameters with
+  ## this method generating the XML-RPC method call string in the body. Use
+  ## that instead of this method directly as it involves writing less code.
+  ## 
+  ## Example usage::
+  ##  getMethodCall("download_item")
+  ## 
   let root = newElement("methodCall")
 
   let methodName = newElement("methodName")
@@ -585,7 +669,7 @@ proc getMethodCall*(name: string, params: varargs[XmlRpcType]): XmlNode =
 
   root.add methodName
   root.add paramsNode
-  return root
+  return $root
 
 when isMainModule:
   xmlRpcSpec:
