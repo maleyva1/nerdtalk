@@ -2,6 +2,16 @@
 
 `nerdtalk` is an XML-RPC implementation in pure Nim.
 
+```nim
+#                                                                          (object)
+# Method Name -------|                                                    structure --|           (object)
+#                    | string ----| int --|   base64 -| bool -- |    float -|         |             Array --|
+#                    |            |       |           |         |           |         |                     |
+# getMethodCall("update_account", !:"mark", !:2, ?:"password", !:true, !:3.1456, !:payload, !:now(), !:arr)
+#                                                                                                 |
+#                                                                                    DateTime ----|
+```
+
 ## Example Usage
 
 Here is an example `nerdtalk` using the `xmlRpcSpec` macro:
@@ -64,5 +74,5 @@ Any type `T` can map to `<base64>` iff `T` implements `$`
 - ~~Implement recursive XMl-RPC array definitions?~~
 - ~~Allow code generation through DSL~~
 - ~~Implement byte-width specific integer types~~
-- Implement de-serialization of XML to XmlRpcTypes
-- Allow compile time reading of XML spec
+- ~~Implement de-serialization of XML-RPC responses~~
+- ~~Allow compile time reading of XML spec~~
