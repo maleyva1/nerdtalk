@@ -71,6 +71,40 @@ type
       of xmlRpcStruct:
         fStruct*: seq[(string, XmlRpcType)]
 
+proc `~=`*(lhs, rhs: XmlRpcType) : bool =
+  return lhs.k == rhs.k
+
+proc `==`*(lhs, rhs: XmlRpcType) : bool =
+  if lhs.k == rhs.k:
+    case lhs.k:
+      of xmlRpcInteger:
+        return lhs.fInt == rhs.fInt
+      of xmlRpcBoolean:
+        return lhs.fBool == rhs.fBool
+      of xmlRpcString, xmlRpcBase64:
+        return lhs.fString == rhs.fString
+      of xmlRpcFloat:
+        return lhs.fFloat == rhs.fFloat
+      of xmlRpcDateTime:
+        return lhs.fDateTime == rhs.fDateTime
+      of xmlRpcArray:
+        for element in zip(lhs.fArray, rhs.fArray):
+          if not (element[0] == element[1]):
+            return false
+        return true
+      of xmlRpcStruct:
+        for element in zip(lhs.fStruct, rhs.fStruct):
+          let first = element[0]
+          let second = element[1]
+          # Check member names
+          if not (first[0] == second[0]):
+            return false
+          # Check member values
+          if not (first[1] == second[1]):
+            return false
+        return true
+  return false
+
 template xrarray*() {.pragma.} ## \
 ## Used to discriminate between XML-RPC structs
 ## and XML-RPC arrays. The presence of this pragma
