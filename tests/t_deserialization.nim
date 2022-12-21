@@ -3,7 +3,7 @@ import std/unittest
 import nerdtalk
 
 suite "XML-RPC Response deserialization":
-    test "Faults":
+    test "Fault":
         let faultResponse = """
         <?xml version="1.0"?>
         <methodResponse>
@@ -31,7 +31,7 @@ suite "XML-RPC Response deserialization":
         check i.k == XmlRpcResponseKind.fault
         check i.code == 4
         check i.str == "Too many parameters."
-    test "MethodResponse":
+    test "Simple method response":
         let response = """
         <?xml version="1.0"?>
         <methodResponse>
@@ -48,3 +48,25 @@ suite "XML-RPC Response deserialization":
         check i.k == XmlRpcResponseKind.methodResponse
         check i.response.k == xmlRpcString
         check i.response.fString == "South Dakota"
+    test "Complete metod response":
+        let response = """
+        <methodResponse>
+            <params>
+                <param>
+                    <value>
+                        <struct>
+                            <member>
+                                <name>Name</name>
+                                <value>
+                                    <string>John</string>
+                                </value>
+                            </member>
+                        </struct>
+                    </value>
+                </param>
+            </params>
+        </methodResponse>
+        """
+        let i = :!response
+        check i.k == XmlRpcResponseKind.methodResponse
+        check i.response.k == xmlRpcStruct
