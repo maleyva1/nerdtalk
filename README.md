@@ -2,16 +2,6 @@
 
 `nerdtalk` is an XML-RPC implementation in pure Nim.
 
-```nim
-#                                                                          (object)
-# Method Name -------|                                                    structure --|           (object)
-#                    | string ----| int --|   base64 -| bool -- |    float -|         |             Array --|
-#                    |            |       |           |         |           |         |                     |
-# getMethodCall("update_account", !:"mark", !:2, ?:"password", !:true, !:3.1456, !:payload, !:now(), !:arr)
-#                                                                                                 |
-#                                                                                    DateTime ----|
-```
-
 ## Example Usage
 
 Here is an example `nerdtalk` using the `xmlRpcSpec` macro:
@@ -39,11 +29,6 @@ import nerdtalk
 
 socket.read(buffer, 1023)
 var result = :!buffer
-case result:
-  of xmlRpcString:
-    echo result.fString
-  else:
-    discard
 ```
 
 ## Implementation
@@ -63,16 +48,16 @@ A `bool` maps to `<boolean>`
 
 An `object` maps to `<struct>`
 
-An `object` marked `{.xrarray.}` maps to `<array>`
+An `object` marked with  `{.xrarray.}` maps to `<array>`
 
 Any type `T` can map to `<base64>` iff `T` implements `$`
 
 ## TODO
 
-- ~~Allow recursive definition of struct types~~
-- ~~Implement serialization of XML-RPC arrays~~
-- ~~Implement recursive XMl-RPC array definitions?~~
-- ~~Allow code generation through DSL~~
-- ~~Implement byte-width specific integer types~~
-- ~~Implement de-serialization of XML-RPC responses~~
-- ~~Allow compile time reading of XML spec~~
+- Add support for `Natural` and custom `range` types
+- Possible serialization of generic sequences and arrays of type to
+`<array>` type
+- Add tests for de-serialization and exception handling
+- Handle ill-formed XML-RPC de-serialization
+- Add support for marshalling between `XmlRpcType` and user-types?
+

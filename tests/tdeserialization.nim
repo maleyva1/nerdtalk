@@ -28,9 +28,7 @@ suite "XML-RPC Response deserialization":
             </methodResponse>
         """
         let i = :!faultResponse
-        check i.k == XmlRpcResponseKind.fault
-        check i.code == 4
-        check i.str == "Too many parameters."
+        check i == XmlRpcResponse(k: XmlRpcResponseKind.fault, code: 4, str: "Too many parameters.")
     test "Simple method response":
         let response = """
         <?xml version="1.0"?>
@@ -48,7 +46,7 @@ suite "XML-RPC Response deserialization":
         check i.k == XmlRpcResponseKind.methodResponse
         check i.response.k == xmlRpcString
         check i.response.fString == "South Dakota"
-    test "Complete metod response":
+    test "Complex method response (<struct>)":
         let response = """
         <methodResponse>
             <params>
@@ -67,6 +65,44 @@ suite "XML-RPC Response deserialization":
             </params>
         </methodResponse>
         """
+        type
+            Temp = object
+                Name: string
+        let i = :!response
+        let j = !:Temp(Name: "John")
+        check i.k == XmlRpcResponseKind.methodResponse
+        check i.response == j
+    test "Complex method response (<array>)":
+        let response = """
+        <methodResponse>
+            <params>
+                <param>
+                    <value>
+                        <array>
+                            <data>
+                                <value>
+                                    <int>1</int>
+                                </value>
+                                <value>
+                                    <double>1.0</double>
+                                </value>
+                                <value>
+                                    <string>Hello World</string>
+                                </value>
+                            </data>
+                        </array>
+                    </value>
+                </param>
+            </params>
+        </methodResponse>
+        """
         let i = :!response
         check i.k == XmlRpcResponseKind.methodResponse
-        check i.response.k == xmlRpcStruct
+        check i.response.k == xmlRpcArray
+    test "Ill-formed XML":
+        let response = """
+        <methodResponse>
+            <params>
+            </params>
+        </methodResponse>
+        """

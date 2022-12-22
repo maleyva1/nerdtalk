@@ -71,11 +71,13 @@ type
       of xmlRpcStruct:
         fStruct*: seq[(string, XmlRpcType)]
 
-proc `~=`*(lhs, rhs: XmlRpcType) : bool =
+proc `~=`*(lhs, rhs: XmlRpcType) : bool {.inline.} =
   return lhs.k == rhs.k
 
 proc `==`*(lhs, rhs: XmlRpcType) : bool =
-  if lhs.k == rhs.k:
+  ## Checks if `lhs` is field equivalent with
+  ## `rhs`
+  if lhs ~= rhs:
     case lhs.k:
       of xmlRpcInteger:
         return lhs.fInt == rhs.fInt
@@ -103,6 +105,15 @@ proc `==`*(lhs, rhs: XmlRpcType) : bool =
           if not (first[1] == second[1]):
             return false
         return true
+  return false
+
+proc `==`*(lhs, rhs: XmlRpcResponse) : bool =
+  if lhs.k == rhs.k:
+    case lhs.k:
+      of methodResponse:
+        return lhs.response == rhs.response
+      of fault:
+        return (lhs.code == rhs.code) and (lhs.str == rhs.str)
   return false
 
 template xrarray*() {.pragma.} ## \
@@ -389,14 +400,14 @@ proc deserialize(value: XmlNode): XmlRpcType =
       var elements = newSeq[(string, XmlRpcType)]()
       for child in value:
         let mName = child[0].innerText
-        let mValue = child[1]
+        let mValue = child[1][0]
         elements.add((mName, deserialize(mValue)))
       r = XmlRpcType(k: xmlRpcStruct, fStruct: elements)
     of "array":
       var elements = newSeq[XmlRpcType]()
       for child in value[0]:
         let aValue = child[0]
-        let aType = aValue[0]
+        let aType = aValue
         elements.add(deserialize(aType))
       r = XmlRpcType(k: xmlRpcArray, fArray: elements)
     else:
@@ -483,7 +494,7 @@ macro xmlRpcSpecFromFile*(spec: static[string]): untyped =
 proc getFuncName(name: NimNode): string =
   ## Get the function name
   var funcName = name.repr.replace(".", "_").replace("\"", "")
-  return funcName.strip(chars = {'\r', '\n'})
+  return funcName.strip(chars = {'\r', '\n', '\t'})
 
 macro xmlRpcSpec*(body: untyped): untyped =
   ## DSL macro for XML-RPC specification.
@@ -497,7 +508,7 @@ macro xmlRpcSpec*(body: untyped): untyped =
   ##  xmlRpcSpec:
   ##   name: <string>
   ##   [params:
-  ##     <string_wo_quotes>:<string>
+  ##     <string_wo_quotes>:<basic Nim type>
   ##     ...
   ##   ]
   ## 
@@ -634,7 +645,7 @@ proc serialize(this: XmlRpcType): XmlNode =
     of xmlRpcInteger:
       result = newText($this.fInt)
     of xmlRpcBoolean:
-      result = newText($this.fBool)
+      result = newText(if this.fBool: "1" else: "0")
     of xmlRpcString, xmlRpcBase64:
       result = newText(this.fString)
     of xmlRpcFloat:
@@ -705,19 +716,3 @@ proc getMethodCall*(name: string, params: varargs[XmlRpcType]): string =
   root.add paramsNode
   return $root
 
-when isMainModule:
-  xmlRpcSpec:
-    name: "download_list"
-    name: "get_items"
-    params:
-      itemList: int
-    name: "update_Account"
-    params:
-      accountName: string
-      id: int
-
-  xmlRpcSpecFromFile("../spec.xml")
-  echo get_account(2.0)
-  echo download_list()
-  echo get_items(1)
-  echo update_Account("Mark", 2)
