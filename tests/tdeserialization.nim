@@ -1,6 +1,24 @@
 import std/unittest
+import std/random
+import std/times
+import std/strformat
 
 import nerdtalk
+
+randomize(now().second)
+
+proc generateMethodResponse(response: XmlRpcType) : string =
+    return fmt"""
+    <methodResponse>
+        <params>
+            <param>
+                <value>
+                    {response}
+                </value>
+            </param>
+        </params>
+    </methodResponse>
+    """
 
 suite "XML-RPC Response deserialization":
     test "Fault":
@@ -30,75 +48,34 @@ suite "XML-RPC Response deserialization":
         let i = :!faultResponse
         check i == XmlRpcResponse(k: XmlRpcResponseKind.fault, code: 4, str: "Too many parameters.")
     test "Simple method response":
-        let response = """
-        <?xml version="1.0"?>
-        <methodResponse>
-            <params>
-                <param>
-                    <value>
-                        <string>South Dakota</string>
-                    </value>
-                </param>
-            </params>
-        </methodResponse>
-        """
+        let payload = "South Dakota"
+        let response = generateMethodResponse(to payload)
         let i = :!response
+        let j = to payload
         check i.k == XmlRpcResponseKind.methodResponse
-        check i.response.k == xmlRpcString
-        check i.response.fString == "South Dakota"
+        check i.response == j
     test "Complex method response (<struct>)":
-        let response = """
-        <methodResponse>
-            <params>
-                <param>
-                    <value>
-                        <struct>
-                            <member>
-                                <name>Name</name>
-                                <value>
-                                    <string>John</string>
-                                </value>
-                            </member>
-                        </struct>
-                    </value>
-                </param>
-            </params>
-        </methodResponse>
-        """
         type
-            Temp = object
+            Payload = object
                 Name: string
+        let payload = Payload(Name: "John")
+        let response = generateMethodResponse(to payload)
         let i = :!response
-        let j = !:Temp(Name: "John")
+        let j = to payload
         check i.k == XmlRpcResponseKind.methodResponse
         check i.response == j
     test "Complex method response (<array>)":
-        let response = """
-        <methodResponse>
-            <params>
-                <param>
-                    <value>
-                        <array>
-                            <data>
-                                <value>
-                                    <int>1</int>
-                                </value>
-                                <value>
-                                    <double>1.0</double>
-                                </value>
-                                <value>
-                                    <string>Hello World</string>
-                                </value>
-                            </data>
-                        </array>
-                    </value>
-                </param>
-            </params>
-        </methodResponse>
-        """
+        type
+            Payload {.xrarray.} = object
+                a: int
+                b: float
+                c: string
+        let payload = Payload(a: 1, b: 1.0, c: "Hello World")
+        let response = generateMethodResponse(to payload)
         let i = :!response
+        let j = to payload
         check i.k == XmlRpcResponseKind.methodResponse
-        check i.response.k == xmlRpcArray
+        check i.response == j
     test "Ill-formed XML":
         let response = """
         <methodResponse>
@@ -111,18 +88,16 @@ suite "XML-RPC Response deserialization":
         except XmlRpcDecodingException as err:
             check err is ref XmlRpcDecodingException
     test "Integer deserialization":
-        let response = """
-        <methodResponse>
-            <params>
-                <param>
-                    <value>
-                        <int>1</int>
-                    </value>
-                </param>
-            </params>
-        </methodResponse>
-        """
+        let randInt = rand(0..1_000_000)
+        let response = generateMethodResponse(to randInt)
         let i = :!response
-        let j = !:1
+        let j = to randInt
+        check i.k == XmlRpcResponseKind.methodResponse
+        check i.response == j
+    test "Float deserialization":
+        let randFloat = rand(1_000_000.00)
+        let response = generateMethodResponse(to randFloat)
+        let i = :!response
+        let j = to randFloat
         check i.k == XmlRpcResponseKind.methodResponse
         check i.response == j

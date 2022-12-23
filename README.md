@@ -36,11 +36,11 @@ var response = :!buffer
 In order to increase ease of use, `nerdtalk` maps Nim's type system
 to XML-RPC "types".
 
-An `int` maps to `<int>` or `<iN>` where `N` is the byte-width of the integer
+An `int` maps to `<iN>` where `N` is the bit width of the integer on the host platform
 
 A `float` maps to `<double>`
 
-A `string` maps to `<string>`
+A `string`, `char`, and `cstring` maps to `<string>`
 
 A `DateTime` object maps to `<datetime.iso8601>`
 
@@ -50,14 +50,14 @@ An `object` maps to `<struct>`
 
 An `object` marked with  `{.xrarray.}` maps to `<array>`
 
+Sequences and arrays map to `<array>`
+
 Any type `T` can map to `<base64>` iff `T` implements `$`
 
 ## TODO
 
-- Possible serialization of generic sequences and arrays to heterogeneous `<array>` type
+- Add `seq` and `arr` member support for `XmlRpcType`
+- Check ISO-8601 XMl-RPC deserialization
 - Add more tests for deserialization and exception handling
 - Add support for serialization between `XmlRpcType` and user-types a la `std/json`
-- Check ISO-8601 XMl-RPC deserialization
-- Improve XML-RPC integer parsing support. Can be `<int>` or `<i4>`, or in general `<iN>`
-where `N` is the bit width of the integer on that platform
-- Improve code generation in macros
+- Test `xmlSpecFromFile` macro

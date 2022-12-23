@@ -10,25 +10,25 @@ randomize(now().second)
 suite "XMl-RPC Serialization Macro":
   test "Integers":
     let q = rand(0..1_000_000)
-    let i = !:q
+    let i = to q
     let j = XmlRpcType(k: xmlRpcInteger, fInt: q)
     check i == j
   test "Strings":
-    let i = !:"Hello World"
+    let i = to "Hello World"
     let j = XmlRpcType(k: xmlRpcString, fString: "Hello World")
     check i == j
   test "Booleans":
-    let i = !:true
+    let i = to true
     let j = XmlRpcType(k: xmlRpcBoolean, fBool: true)
     check i == j
   test "Float":
     let q = rand(1_000_000.00)
-    let i = !:q
+    let i = to q
     let j = XmlRpcType(k: xmlRpcFloat, fFloat: q)
     check i == j
   test "Datetime":
     let q = now()
-    let i = !:q
+    let i = to q
     let j = XmlRpcType(k: xmlRpcDateTime, fDateTime: q)
     check i == j
   test "Base64":
@@ -41,7 +41,7 @@ suite "XMl-RPC Serialization Macro":
       User = object
         name: string
         id: int
-    let i = !:User(name: "John Doe", id: 1001)
+    let i = to User(name: "John Doe", id: 1001)
     let j = XmlRpcType(k: xmlRpcStruct, fStruct: @[
       ("name", XmlRpcType(k: xmlRpcString, fString: "John Doe")),
       ("id", XmlRpcType(k: xmlRpcInteger, fInt: 1001))
@@ -52,7 +52,7 @@ suite "XMl-RPC Serialization Macro":
       User = object
         name: string
         id: Natural
-    let i = !:User(name: "Steve Wonder", id: 1001)
+    let i = to User(name: "Steve Wonder", id: 1001)
     let j = XmlRpcType(k: xmlRpcStruct, fStruct: @[
       ("name", XmlRpcType(k: xmlRpcString, fString: "Steve Wonder")),
       ("id", XmlRpcType(k: xmlRpcInteger, fInt: 1001))
@@ -68,7 +68,7 @@ suite "XMl-RPC Serialization Macro":
         age: int
         owner: Person
     let o = Person(name: "Hank Hill", age: 43)
-    let i = !:Dog(name: "Ladybird", age: 4, owner: o)
+    let i = to Dog(name: "Ladybird", age: 4, owner: o)
     let j = XmlRpcType(k: xmlRpcStruct, fStruct: @[
       ("name", XmlRpcType(k: xmlRpcString, fString: "Ladybird")),
       ("age", XmlRpcType(k: xmlRpcInteger, fInt: 4)),
@@ -83,9 +83,10 @@ suite "XMl-RPC Serialization Macro":
       Users {.xrarray.} = object
         names: string
         ids: int
-    let i = !:Users(names: "John Doe", ids: 1001)
+    let i = to Users(names: "John Doe", ids: 1001)
     let j = XmlRpcType(k: xmlRpcArray, fArray: @[
       XmlRpcType(k: xmlRpcString, fString: "John Doe"),
       XmlRpcType(k: xmlRpcInteger, fInt: 1001)
       ])
     check i == j
+  #test "Complex Arrays":
