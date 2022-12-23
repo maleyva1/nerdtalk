@@ -5,6 +5,7 @@ import std/xmlparser
 import std/xmltree
 import std/sequtils
 import std/typetraits
+from std/os import fileExists
 from std/math import almostEqual
 import std/base64
 
@@ -538,10 +539,20 @@ macro xmlRpcSpecFromFile*(spec: static[string]): untyped =
   ## Compile time code generation from a XMl spec file.
   ##
   ## The cousin of `xmlRpcSpec`, this macro generates code
-  ## from a file at compile-time.
+  ## from a file at compile time.
   ##
-  var specSource = staticRead(spec)
-  var specXml = parseXml(specSource)
+  if not fileExists(spec):
+    error(spec & " does not exist")
+
+  var 
+    specSource = staticRead(spec)
+    specXml: XmlNode
+
+  try:
+    specXml = parseXml(specSource)
+  except Exception as e:
+    error("Unable to parse file " & e.msg)
+
   var specs = newSeq[NimNode]()
   for meth in specXml:
     let mName = meth[0]
