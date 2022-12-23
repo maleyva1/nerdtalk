@@ -345,9 +345,9 @@ macro `!:`*(body: typed): untyped =
     of ntyBool:
       result = quote do:
         XmlRpcType(k: xmlRpcBoolean, fBool: `body`)
-    of ntyString, ntyChar:
+    of ntyString, ntyChar, ntyCString:
       result = quote do:
-        # char type must be converted to string type with `$`
+        # non-string types must be converted to string type with `$`
         XmlRpcType(k: xmlRpcString, fString: $`body`)
     of ntyObject:
       let ntype = node.getTypeInst
@@ -670,17 +670,23 @@ proc serialize(this: XmlRpcType): XmlNode =
   ##
   case this.k:
     of xmlRpcInteger:
-      result = newText($this.fInt)
+      result = newElement(this.getRpcType)
+      result.add newText($this.fInt)
     of xmlRpcBoolean:
-      result = newText(if this.fBool: "1" else: "0")
+      result = newElement(this.getRpcType)
+      result.add newText(if this.fBool: "1" else: "0")
     of xmlRpcString, xmlRpcBase64:
-      result = newText(this.fString)
+      result = newElement(getRpcType(this))
+      result.add newText(this.fString)
     of xmlRpcFloat:
-      result = newText($this.fFloat)
+      result = newElement(getRpcType(this))
+      result.add newText($this.fFloat)
     of xmlRpcDateTime:
-      result = newText($this.fDateTime)
+      result = newElement(getRpcType(this))
+      result.add newText($this.fDateTime)
     of xmlRpcStruct:
       result = newElement(getRpcType(this))
+      # (name: string, field: XmlRpcType)
       for member in this.fStruct:
         let memberNode = newElement("member")
 
@@ -730,12 +736,9 @@ proc getMethodCall*(name: string, params: varargs[XmlRpcType]): string =
   for param in params:
     let paramNode = newElement("param")
     let value = newElement("value")
-    # Get the string representation for type T
-    let dataNode = newElement(param.getRpcType)
     # Since <array>'s and <struct>'s are recursive
     # we need to serialize them
-    dataNode.add param.serialize
-    value.add dataNode
+    value.add param.serialize
     paramNode.add value
     paramsNode.add paramNode
 

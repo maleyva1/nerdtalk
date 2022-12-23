@@ -20,7 +20,7 @@ when isMainModule:
     echo d_name("ABDCEFGH1234567890")
 ```
 
-For de-serialization:
+For deserialization (unmarshalling):
 
 ```nim
 import nerdtalk
@@ -54,10 +54,10 @@ Any type `T` can map to `<base64>` iff `T` implements `$`
 
 ## TODO
 
-- Add support for custom `range` types
-- Add support for `cstring`s
 - Possible serialization of generic sequences and arrays to heterogeneous `<array>` type
 - Add more tests for deserialization and exception handling
-- ~~Handle ill-formed XML-RPC de-serialization~~
 - Add support for serialization between `XmlRpcType` and user-types a la `std/json`
-- Check ISO-8601 XMl-RPC de-serialization
+- Check ISO-8601 XMl-RPC deserialization
+- Improve XML-RPC integer parsing support. Can be `<int>` or `<i4>`, or in general `<iN>`
+where `N` is the bit width of the integer on that platform
+- Improve code generation in macros

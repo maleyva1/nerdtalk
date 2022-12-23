@@ -110,3 +110,19 @@ suite "XML-RPC Response deserialization":
             discard :!response
         except XmlRpcDecodingException as err:
             check err is ref XmlRpcDecodingException
+    test "Integer deserialization":
+        let response = """
+        <methodResponse>
+            <params>
+                <param>
+                    <value>
+                        <int>1</int>
+                    </value>
+                </param>
+            </params>
+        </methodResponse>
+        """
+        let i = :!response
+        let j = !:1
+        check i.k == XmlRpcResponseKind.methodResponse
+        check i.response == j
