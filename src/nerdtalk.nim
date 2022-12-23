@@ -535,6 +535,28 @@ proc `:!`*(body: string): XmlRpcResponse {.raises: [XmlRpcDecodingException].} =
   else:
     raise newException(XmlRpcDecodingException, "Received an invalid XML-RPC response type. Expected a <fault> or <params>")
 
+proc getFuncName(name: NimNode): string =
+  ## Get the function name
+  ##
+  var funcName = name.repr.replace(".", "_").replace("\"", "")
+  return funcName.strip(chars = {'\r', '\n', '\t'})
+
+proc getFuncName(name: string) : string =
+  var funcName = name.replace(".", "_").replace("\"", "")
+  return funcName.strip(chars = {'\r', '\n', '\t'})
+
+proc generateFuncWithNoParams(f: NimNode, name: string): NimNode =
+  ## Generate a function with no parameters
+  ##
+  let paramsNode = newNimNode(nnkFormalParams)
+  paramsNode.add(ident("string"))
+  f.add(paramsNode)
+  f.add(newEmptyNode(), newEmptyNode())
+  let funcBody = newStmtList(newAssignment(ident("result"), newCall(ident(
+      "getMethodCall"), newLit(name))))
+  f.add(funcBody)
+  return f
+
 macro xmlRpcSpecFromFile*(spec: static[string]): untyped =
   ## Compile time code generation from a XMl spec file.
   ##
@@ -559,7 +581,7 @@ macro xmlRpcSpecFromFile*(spec: static[string]): untyped =
     let mParams = meth[1]
 
     var specFunc = newNimNode(nnkProcDef)
-    specFunc.add(ident(mName.innerText))
+    specFunc.add(ident(getFuncName(mName.innerText)))
     specFunc.add(newEmptyNode(), newEmptyNode())
     let paramsNode = newNimNode(nnkFormalParams)
     paramsNode.add(ident("string"))
@@ -586,24 +608,6 @@ macro xmlRpcSpecFromFile*(spec: static[string]): untyped =
   result = newStmtList()
   for item in specs:
     result.add(item)
-
-proc getFuncName(name: NimNode): string =
-  ## Get the function name
-  ##
-  var funcName = name.repr.replace(".", "_").replace("\"", "")
-  return funcName.strip(chars = {'\r', '\n', '\t'})
-
-proc generateFuncWithNoParams(f: NimNode): NimNode =
-  ## Generate a function with no parameters
-  ##
-  let paramsNode = newNimNode(nnkFormalParams)
-  paramsNode.add(ident("string"))
-  f.add(paramsNode)
-  f.add(newEmptyNode(), newEmptyNode())
-  let funcBody = newStmtList(newAssignment(ident("result"), newCall(ident(
-      "getMethodCall"), newLit(f[0].strVal))))
-  f.add(funcBody)
-  return f
 
 macro xmlRpcSpec*(body: untyped): untyped =
   ## DSL macro for XML-RPC specification.
@@ -649,7 +653,7 @@ macro xmlRpcSpec*(body: untyped): untyped =
   ##
   body.expectKind nnkStmtList
   var spec = newSeq[NimNode]()
-  var funcs = newSeq[NimNode]()
+  var funcs = newSeq[(string, NimNode)]()
   for call in body:
     call.expectKind nnkCall
     let ident = call[0]
@@ -665,21 +669,25 @@ macro xmlRpcSpec*(body: untyped): untyped =
 
       if funcs.len != 0:
         let pastFunc = funcs.pop()
+        let name = pastFunc[0]
+        let pFunc = pastFunc[1]
         # All XML-RPC calls return XmlNode
         # This specific case creates a proc with zero parameters
-        spec.add(generateFuncWithNoParams(pastFunc))
-      funcs.add(funcNode)
+        spec.add(generateFuncWithNoParams(pFunc, name))
+      funcs.add((name.repr, funcNode))
     elif ident.repr == "params":
       call[1].expectKind nnkStmtList
       let params = call[1]
-      let currentFunc = funcs.pop()
+      let prev = funcs.pop()
+      let name = prev[0]
+      let currentFunc = prev[1]
       # All XML-RPC calls return XmlNode
       let paramsNode = newNimNode(nnkFormalParams)
       paramsNode.add(ident("string"))
 
       var paramsBody = newSeq[NimNode]()
       # XML-RPC function name is the first parameter
-      paramsBody.add(newLit(currentFunc[0].strVal))
+      paramsBody.add(newLit(name))
 
       # Generate the procedure prototype and params in single loop
       for param in params:
@@ -705,8 +713,10 @@ macro xmlRpcSpec*(body: untyped): untyped =
 
   # Handle any leftover that have no params
   if funcs.len != 0:
-    let pastFunc = funcs.pop()
-    spec.add(generateFuncWithNoParams(pastFunc))
+    let prev = funcs.pop()
+    let name = prev[0]
+    let pastFunc = prev[1]
+    spec.add(generateFuncWithNoParams(pastFunc, name))
 
   # Pack all the generated code into a statement list
   result = newStmtList()
