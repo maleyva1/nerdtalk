@@ -5,7 +5,7 @@ import std/base64
 
 import nerdtalk
 
-randomize()
+randomize(now().second)
 
 suite "XMl-RPC Serialization Macro":
   test "Integers":
@@ -46,6 +46,17 @@ suite "XMl-RPC Serialization Macro":
       ("name", XmlRpcType(k: xmlRpcString, fString: "John Doe")),
       ("id", XmlRpcType(k: xmlRpcInteger, fInt: 1001))
       ])
+    check i == j
+  test "Struct 2":
+    type
+      User = object
+        name: string
+        id: Natural
+    let i = !:User(name: "Steve Wonder", id: 1001)
+    let j = XmlRpcType(k: xmlRpcStruct, fStruct: @[
+      ("name", XmlRpcType(k: xmlRpcString, fString: "Steve Wonder")),
+      ("id", XmlRpcType(k: xmlRpcInteger, fInt: 1001))
+    ])
     check i == j
   test "Complex objects":
     type

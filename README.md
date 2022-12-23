@@ -28,7 +28,7 @@ import nerdtalk
 # ...
 
 socket.read(buffer, 1023)
-var result = :!buffer
+var response = :!buffer
 ```
 
 ## Implementation
@@ -54,10 +54,10 @@ Any type `T` can map to `<base64>` iff `T` implements `$`
 
 ## TODO
 
-- Add support for `Natural` and custom `range` types
-- Possible serialization of generic sequences and arrays of type to
-`<array>` type
-- Add tests for de-serialization and exception handling
-- Handle ill-formed XML-RPC de-serialization
-- Add support for marshalling between `XmlRpcType` and user-types?
-
+- Add support for custom `range` types
+- Add support for `cstring`s
+- Possible serialization of generic sequences and arrays to heterogeneous `<array>` type
+- Add more tests for deserialization and exception handling
+- ~~Handle ill-formed XML-RPC de-serialization~~
+- Add support for serialization between `XmlRpcType` and user-types a la `std/json`
+- Check ISO-8601 XMl-RPC de-serialization

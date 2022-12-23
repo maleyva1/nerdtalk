@@ -106,3 +106,7 @@ suite "XML-RPC Response deserialization":
             </params>
         </methodResponse>
         """
+        try:
+            discard :!response
+        except XmlRpcDecodingException as err:
+            check err is ref XmlRpcDecodingException

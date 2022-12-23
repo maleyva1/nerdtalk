@@ -45,25 +45,25 @@ type
   ## members.
   ## 
     methodResponse, fault
-  XmlRpcResponse* = object
+  XmlRpcResponse* {.final.} = object
     case k*: XmlRpcResponseKind
       of methodResponse:
         response*: XmlRpcType
       of fault:
         code*: int
         str*: string
-  XmlRpcType* = object
+  XmlRpcType* {.acyclic, final.} = object
     ## Base type for all XML-RPC types
     ## 
     case k*: XmlRpcItemKind
       of xmlRpcInteger:
-        fInt*: int
+        fInt*: BiggestInt
       of xmlRpcBoolean:
         fBool*: bool
       of xmlRpcString, xmlRpcBase64:
         fString*: string
       of xmlRpcFloat:
-        fFloat*: float
+        fFloat*: BiggestFloat
       of xmlRpcDateTime:
         fDateTime*: DateTime
       of xmlRpcArray:
@@ -72,11 +72,15 @@ type
         fStruct*: seq[(string, XmlRpcType)]
 
 proc `~=`*(lhs, rhs: XmlRpcType) : bool {.inline.} =
+  ## Checks if `lhs` and `rhs` are the same kind of
+  ## `XmlRpcItemKind`
+  ##
   return lhs.k == rhs.k
 
 proc `==`*(lhs, rhs: XmlRpcType) : bool =
   ## Checks if `lhs` is field equivalent with
   ## `rhs`
+  ##
   if lhs ~= rhs:
     case lhs.k:
       of xmlRpcInteger:
@@ -219,7 +223,7 @@ proc constructRpcType(members: seq[(string, xType)], objct: NimNode): seq[NimNod
           of "float":
             typeNode = ident("fFloat")
             xmlRpcNodeKind = ident("xmlRpcFloat")
-          of "int":
+          of "int", "Natural":
             typeNode = ident("fInt")
             xmlRpcNodeKind = ident("xmlRpcInteger")
           of "bool":
@@ -332,10 +336,10 @@ macro `!:`*(body: typed): untyped =
   ## 
   let node = body.getTypeImpl
   case node.typeKind:
-    of ntyInt:
+    of ntyInt, ntyRange, ntyOrdinal:
       result = quote do:
         XmlRpcType(k: xmlRpcInteger, fInt: `body`)
-    of ntyFloat:
+    of ntyFloat, ntyFloat32, ntyFloat64, ntyFloat128:
       result = quote do:
         XmlRpcType(k: xmlRpcFloat, fFloat: `body`)
     of ntyBool:
@@ -391,7 +395,8 @@ proc deserialize(value: XmlNode): XmlRpcType =
         raise newException(XmlRpcDecodingException, e.msg)
     of "dateTime.iso8601":
       try:
-        r = !:parse(value.innerText, "YYYY-MM-dd")
+        # Year-Month-Day Hour:minutes:seconds.milliseconds
+        r = !:parse(value.innerText, "YYYY-MM-dd HH:mm:ss:fff")
       except TimeParseError as e:
         raise newException(XmlRpcDecodingException, e.msg)
     of "base64":
@@ -416,6 +421,7 @@ proc deserialize(value: XmlNode): XmlRpcType =
 
 proc `:!`*(body: string): XmlRpcResponse {.raises: [XmlRpcDecodingException].} =
   ## Deserialization proc for XML-RPC responses.
+  ##
   var response: XmlNode
   try:
     response = parseXml(body)
@@ -425,27 +431,46 @@ proc `:!`*(body: string): XmlRpcResponse {.raises: [XmlRpcDecodingException].} =
   let params = response.findAll("params")
   if faults.len == 1:
     let fault = faults[0]
-    let struct = fault[0][0]
+    var struct : XmlNode
+    try:
+      struct = fault[0][0]
+    except IndexDefect:
+      raise newException(XmlRpcDecodingException, "Expected a <value> tag")
     var
       code: int
       reason: string
+    # Iterate through each `<member>`
     for child in struct:
-      let name = child[0]
+      var name : XmlNode
+      try:
+        name = child[0]
+      except IndexDefect:
+        raise newException(XmlRpcDecodingException, "Expected a <name> tag")
       if name.innerText == "faultCode":
         try:
           code = parseInt(child[1][0].innerText)
         except ValueError as e:
-          raise newException(XmlRpcDecodingException, e.msg)
+          raise newException(XmlRpcDecodingException, "Unable to parse integer: " & e.msg)
+        except IndexDefect:
+          raise newException(XmlRpcDecodingException, "Expected a <value> tag")
       elif name.innerText == "faultString":
-        reason = child[1][0].innerText
+        try:
+          reason = child[1][0].innerText
+        except IndexDefect:
+          raise newException(XmlRpcDecodingException, "Expected a <string> tag")
     return XmlRpcResponse(k: XmlRpcResponseKind.fault, code: code, str: reason)
-    #return response
   elif params.len == 1:
     let param = params[0]
-    let value = param[0][0][0]
+    var value: XmlNode
+    try:
+      # <param><value><T>...</T></value></param>
+      #                |
+      #                |-- Attempting to access this
+      value = param[0][0][0]
+    except IndexDefect:
+      raise newException(XmlRpcDecodingException, "Expected tag <T> where T is an XMl-RPC type")
     let r = deserialize(value)
     return XmlRpcResponse(k: XmlRpcResponseKind.methodResponse, response: r)
-    #return response
   else:
     raise newException(XmlRpcDecodingException, "Received an invalid XML-RPC response type. Expected a <fault> or <params>")
 
@@ -619,7 +644,8 @@ macro xmlRpcSpec*(body: untyped): untyped =
     result.add(item)
 
 proc getRpcType(this: XmlRpcType): string =
-  ## Get the RPC string type of `this`
+  ## Get the RPC type of `this` as `string`
+  ##
   case this.k:
     of xmlRpcInteger:
       result = "i" & $sizeof(this.fInt)
@@ -641,6 +667,7 @@ proc getRpcType(this: XmlRpcType): string =
 proc serialize(this: XmlRpcType): XmlNode =
   ## Gives an XML representation of `this` as:
   ## <value><[TYPE]>LITERAL</[TYPE]></value>
+  ##
   case this.k:
     of xmlRpcInteger:
       result = newText($this.fInt)
