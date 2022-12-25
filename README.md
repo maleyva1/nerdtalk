@@ -59,5 +59,5 @@ Any type `T` can map to `<base64>` iff `T` implements `$`
 - Add `seq` and `arr` member support for `XmlRpcType`
 - Check ISO-8601 XMl-RPC deserialization
 - Add more tests for deserialization and exception handling
-- Add support for serialization between `XmlRpcType` and user-types a la `std/json`
+- Add support for deserialization between `XmlRpcType` and user-types a la `std/json`
 - Improve `xmlSpecFromFile` macro by specfying XML description

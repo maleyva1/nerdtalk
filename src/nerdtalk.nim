@@ -22,9 +22,8 @@ import std/base64
 ##  xmlRpcSpec:
 ##    name: "update_account"
 ##    params:
-##      id: int
 ##      account: Account
-##  update_account(1001, Account(1001, "John", now()))
+##  update_account(Account(1001, "John", now()))
 
 type
   XmlRpcDecodingException* = object of ValueError ## \
@@ -485,8 +484,8 @@ proc `:!`*(body: string): XmlRpcResponse {.raises: [XmlRpcDecodingException].} =
   var response: XmlNode
   try:
     response = parseXml(body)
-  except Exception as m:
-    raise newException(XmlRpcDecodingException, m.msg)
+  except Exception as err:
+    raise newException(XmlRpcDecodingException, err.msg)
   let faults = response.findAll("fault")
   let params = response.findAll("params")
   if faults.len == 1:
@@ -674,7 +673,7 @@ macro xmlRpcSpec*(body: untyped): untyped =
         # All XML-RPC calls return XmlNode
         # This specific case creates a proc with zero parameters
         spec.add(generateFuncWithNoParams(pFunc, name))
-      funcs.add((name.repr, funcNode))
+      funcs.add((name.repr.replace("\"", ""), funcNode))
     elif ident.repr == "params":
       call[1].expectKind nnkStmtList
       let params = call[1]
@@ -746,7 +745,7 @@ proc getRpcType(this: XmlRpcType): string =
 
 proc serialize(this: XmlRpcType): XmlNode =
   ## Gives an XML representation of `this` as:
-  ## <value><[TYPE]>LITERAL</[TYPE]></value>
+  ## <value><T>VALUE</T></value>
   ##
   case this.k:
     of xmlRpcInteger:
@@ -823,7 +822,7 @@ proc getMethodCall*(name: string, params: varargs[XmlRpcType]): string =
     let value = newElement("value")
     # Since <array>'s and <struct>'s are recursive
     # we need to serialize them
-    value.add param.serialize
+    value.add param.serialize()
     paramNode.add value
     paramsNode.add paramNode
 
