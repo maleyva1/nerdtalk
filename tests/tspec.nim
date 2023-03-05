@@ -1,5 +1,4 @@
 import std/unittest
-import std/os
 import std/xmlparser
 import std/xmltree
 import std/times

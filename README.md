@@ -54,6 +54,15 @@ Sequences and arrays map to `<array>`
 
 Any type `T` can map to `<base64>` iff `T` implements `$`
 
+## F.A.Q.
+
+* Why `{.xarray.}`?
+
+    XML-RPC allows different types within `<array>`.
+    The `{.xarray.}` allows users to do so with custom
+    object types since sequences and arrays require
+    the same type.
+
 ## TODO
 
 - Add `seq` and `arr` member support for `XmlRpcType`

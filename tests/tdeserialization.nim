@@ -49,9 +49,9 @@ suite "XML-RPC Response deserialization":
         check i == XmlRpcResponse(k: XmlRpcResponseKind.fault, code: 4, str: "Too many parameters.")
     test "Simple method response":
         let payload = "South Dakota"
-        let response = generateMethodResponse(to payload)
+        let response = generateMethodResponse(`from` payload)
         let i = :!response
-        let j = to payload
+        let j = `from` payload
         check i.k == XmlRpcResponseKind.methodResponse
         check i.response == j
     test "Complex method response (<struct>)":
@@ -59,9 +59,9 @@ suite "XML-RPC Response deserialization":
             Payload = object
                 Name: string
         let payload = Payload(Name: "John")
-        let response = generateMethodResponse(to payload)
+        let response = generateMethodResponse(`from` payload)
         let i = :!response
-        let j = to payload
+        let j = `from` payload
         check i.k == XmlRpcResponseKind.methodResponse
         check i.response == j
     test "Complex method response (<array>)":
@@ -71,9 +71,9 @@ suite "XML-RPC Response deserialization":
                 b: float
                 c: string
         let payload = Payload(a: 1, b: 1.0, c: "Hello World")
-        let response = generateMethodResponse(to payload)
+        let response = generateMethodResponse(`from` payload)
         let i = :!response
-        let j = to payload
+        let j = `from` payload
         check i.k == XmlRpcResponseKind.methodResponse
         check i.response == j
     test "Ill-formed XML":
@@ -89,15 +89,15 @@ suite "XML-RPC Response deserialization":
             check err is ref XmlRpcDecodingException
     test "Integer deserialization":
         let randInt = rand(0..1_000_000)
-        let response = generateMethodResponse(to randInt)
+        let response = generateMethodResponse(`from` randInt)
         let i = :!response
-        let j = to randInt
+        let j = `from` randInt
         check i.k == XmlRpcResponseKind.methodResponse
         check i.response == j
     test "Float deserialization":
         let randFloat = rand(1_000_000.00)
-        let response = generateMethodResponse(to randFloat)
+        let response = generateMethodResponse(`from` randFloat)
         let i = :!response
-        let j = to randFloat
+        let j = `from` randFloat
         check i.k == XmlRpcResponseKind.methodResponse
         check i.response == j

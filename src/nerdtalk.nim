@@ -148,7 +148,8 @@ template xrarray*() {.pragma.} ## \
 ## Example::
 ##  type
 ##    Persons {.xrarray.} = object
-##      p: seq[string]
+##      p: string
+##      d: int
 ## 
 ## **Note**: The same warning applies for objects inheriting
 ## from `RootObj`.
@@ -162,11 +163,11 @@ template xrarray*() {.pragma.} ## \
 proc `?:`*[T](encode: T): XmlRpcType =
   ## Generic constructor for `XmlRpcType` of `Base64`.
   ##
-  ## Note that `T` must have the proc `$` defined for it
+  ## Note that `T` must have the `$` proc defined for it
   ##
   result = XmlRpcType(k: xmlRpcBase64, fString: encode($encode))
 
-# Compile-time object helper types
+## Compile-time object helper types
 type
   xKind = enum
     strKind, seqKind
@@ -183,6 +184,7 @@ type
 proc isXmlRpcArray(t: NimNode): bool =
   ## Checks if a type definition has the {.xrarray.}
   ## pragma
+  ##
   t.expectKind nnkTypeDef
   let q = t.findChild(it.kind == nnkPragmaExpr)
   if q.isNil():
@@ -191,13 +193,15 @@ proc isXmlRpcArray(t: NimNode): bool =
     return q[1][0].strVal == "xrarray"
 
 proc getMembers(recList: NimNode): seq[(string, xType)] =
-  ## Get the name and type members of the NimNode
+  ## Get the name and type members of the NimNode `recList`
+  ##
   result = newSeq[(string, xType)]()
   for item in recList:
     var name = ""
     for idx in 0 ..< item.len:
       let kn = item[idx]
       case kn.kind:
+        # member names come before the member type
         of nnkSym:
           if idx mod 2 == 0:
             # Name
@@ -228,10 +232,15 @@ proc getMembers(recList: NimNode): seq[(string, xType)] =
               else:
                 result.add((name, xType(k: strKind, s: kn.strVal)))
         of nnkBracketExpr:
+          # seq and array types come here
+          # a few things are needed:
+          #   - for the above iterables I, we need the length of I
+          #   - generate: `object`.`name`[i] for all i in I
           let memberType = kn.getTypeImpl
-          #let arraySeqType = memberType[0]
-          #let elementType = memberType[1]
-          error("Sequences and arrays are currently not supported as member types", recList)
+          let arraySeqType = memberType[0]
+          let elementType = memberType[1]
+          result.add((name, xType(k: seqKind, t: arrayType, q: @[])))
+          #error("Sequences and arrays are currently not supported as member types", recList)
         of nnkEmpty:
           discard
         else:
@@ -273,7 +282,7 @@ proc constructRpcType(members: seq[(string, xType)], objct: NimNode): seq[NimNod
             error("Unspported type: " & memberType.s, objct)
         # Construct the proper XmlRpcType
         obj.add(newColonExpr(ident("k"), xmlRpcNodeKind))
-        # `objct`.`mem`
+        # Construct the expression: `objct`.`mem`
         let value = newDotExpr(objct, mem)
         obj.add(newColonExpr(typeNode, value))
         result.add(obj)
@@ -301,6 +310,7 @@ proc constructRpcType(members: seq[(string, xType)], objct: NimNode): seq[NimNod
             xmlRpcNodeKind = ident("xmlRpcArray")
             obj.add(newColonExpr(ident("k"), xmlRpcNodeKind))
             let value = newDotExpr(objct, mem)
+            # Recursively build the nested object types
             let nestedValues = constructRpcType(memberType.q, value)
             let actValue = newTree(nnkBracket, nestedValues)
             let children = newTree(nnkPrefix, ident("@"), actValue)
@@ -308,18 +318,24 @@ proc constructRpcType(members: seq[(string, xType)], objct: NimNode): seq[NimNod
             result.add(obj)
 
 proc xmlRpcObjectConstruction(body: NimNode): NimNode =
-  ## XML-RPC struct type
-  ## are defined as a tuple[string, XmlRpcType]
+  ## XML-RPC struct types are defined as a tuple[string, XmlRpcType]
   ## The first item is the member name (i.e. the field name)
   ## The second item is the value which is itself an XmlRpcType
+  ##
   let typeImpl = body.getTypeImpl
   let recList = typeImpl[2]
+
+  debugEcho("[DEBUG OBJECT] Type implementation: " & recList.repr)
 
   # Get members (name,type)
   var members = getMembers(recList)
 
+  debugEcho("[DEBUG OBJECT] Members" & members.repr)
+
   # Construct a dot expression with the above member information
   var memberValues = constructRpcType(members, body)
+
+  debugEcho(memberValues.repr)
 
   # Get all the names of the object members
   var names = newSeq[string]()
@@ -336,10 +352,12 @@ proc xmlRpcObjectConstruction(body: NimNode): NimNode =
     XmlRpcType(k: xmlRpcStruct, fStruct: @q)
 
 proc xmlRpcArrayContsruction(body: NimNode): NimNode =
+  ## Construct an `<array>` type
+  ## 
   let typeImpl = body.getTypeImpl
   let recList = typeImpl[2]
 
-  # Get members (name,type)
+  # Get members (name, type)
   var members = getMembers(recList)
 
   # Construct a dot expression with the above member information
@@ -349,9 +367,11 @@ proc xmlRpcArrayContsruction(body: NimNode): NimNode =
     let q = `memberValues`
     XmlRpcType(k: xmlRpcArray, fArray: @q)
 
-macro to*(body: typed): untyped =
+macro `from`*(body: typed): untyped =
   ## Construct `XmlRpcType`s from
   ## - `int`
+  ## - `Natural`
+  ## - `range` types
   ## - `float`
   ## - `bool`
   ## - `string`
@@ -391,7 +411,7 @@ macro to*(body: typed): untyped =
       result = quote do:
         var xRpcElements = newSeq[XmlRpcType]()
         for element in `body`:
-          xRpcElements.add(to(element))
+          xRpcElements.add(`from`(element))
         XmlRpcType(k: xmlRpcArray, fArray: xRpcElements)
     of ntyObject:
       let ntype = node.getTypeInst()
@@ -404,6 +424,7 @@ macro to*(body: typed): untyped =
         case body.kind:
           of nnkObjConstr, nnkSym:
             let t = body.getTypeInst().getImpl()
+            # Check if marked with `xarray` pragma
             if t.isXmlRpcArray():
               # Construct XML-RPC array type
               result = xmlRpcArrayContsruction(body)
@@ -415,7 +436,11 @@ macro to*(body: typed): untyped =
     else:
       error("Unspported type", body)
 
+# Todo: Implement
 proc to*[T](this: XmlRpcType, t: typedesc[T]): T =
+  ## Compile-time macro for marshalling from `XmlRpcTypes`
+  ## to user types
+  ##
   result
 
 proc allDigits(str: string): bool =
@@ -436,25 +461,25 @@ proc deserialize(value: XmlNode): XmlRpcType =
   case xmlType:
     of "int":
       try:
-        r = to parseInt(value.innerText)
+        r = `from` parseInt(value.innerText)
       except ValueError as e:
         raise newException(XmlRpcDecodingException, e.msg)
     of "double":
       try:
-        r = to parseFloat(value.innerText)
+        r = `from` parseFloat(value.innerText)
       except ValueError as e:
         raise newException(XmlRpcDecodingException, e.msg)
     of "string":
-      r = to value.innerText
+      r = `from` value.innerText
     of "boolean":
       try:
-        r = to parseBool(value.innerText)
+        r = `from` parseBool(value.innerText)
       except ValueError as e:
         raise newException(XmlRpcDecodingException, e.msg)
     of "dateTime.iso8601":
       try:
         # Year-Month-Day Hour:minutes:seconds.milliseconds
-        r = to parse(value.innerText, "YYYY-MM-dd HH:mm:ss:fff")
+        r = `from` parse(value.innerText, "YYYY-MM-dd HH:mm:ss:fff")
       except TimeParseError as e:
         raise newException(XmlRpcDecodingException, e.msg)
     of "base64":
@@ -535,12 +560,14 @@ proc `:!`*(body: string): XmlRpcResponse {.raises: [XmlRpcDecodingException].} =
     raise newException(XmlRpcDecodingException, "Received an invalid XML-RPC response type. Expected a <fault> or <params>")
 
 proc getFuncName(name: NimNode): string =
-  ## Get the function name
+  ## Get the function name from a `NimNode`
   ##
   var funcName = name.repr.replace(".", "_").replace("\"", "")
   return funcName.strip(chars = {'\r', '\n', '\t'})
 
 proc getFuncName(name: string) : string =
+  ## Get the function name from a `string`
+  ##
   var funcName = name.replace(".", "_").replace("\"", "")
   return funcName.strip(chars = {'\r', '\n', '\t'})
 
@@ -561,6 +588,44 @@ macro xmlRpcSpecFromFile*(spec: static[string]): untyped =
   ##
   ## The cousin of `xmlRpcSpec`, this macro generates code
   ## from a file at compile time.
+  ##
+  ## This macro expects the XML file to adhere to the following:
+  ##  - a single root `<spec>`
+  ##  - any number of `<method>`s
+  ##
+  ## Each `<method>` tag consists of:
+  ##  - a `<name>`
+  ##  - a `<params>` tag
+  ##
+  ## Each `<params>` tag consists of:
+  ##  - any number of `<param>` tags
+  ##
+  ## A `<param>` tag consists of:
+  ##  - a `<name>`
+  ##  - a `<type>`
+  ##
+  ## The set of possible `<type>` values are:
+  ##  - string
+  ##  - int
+  ##  - float
+  ##  - boolean
+  ##
+  ## Example::
+  ##  <spec>
+  ##    <method>
+  ##      <name>download</name>
+  ##      <params>
+  ##        <param>
+  ##          <name>hash</name>
+  ##          <type>string</type>
+  ##        </param>
+  ##      </params>
+  ##    </method>
+  ##  </spec>
+  ##
+  ## The above example produces the following code::
+  ##  proc download(hash: string) : string
+  ##
   ##
   if not fileExists(spec):
     error(spec & " does not exist")
@@ -786,13 +851,18 @@ proc serialize(this: XmlRpcType): XmlNode =
 
       for item in this.fArray:
         let value = newElement("value")
+        # Same as in <struct>s
         value.add item.serialize
         data.add value
 
       result.add data
 
 proc `$`*(this: XmlRpcType): string =
-  ## String representation
+  ## Get the string representation
+  ## of `XmlRpcType` as::
+  ##  <T>
+  ##    value
+  ##  </T>
   ##
   result = $serialize(this)
 
@@ -834,8 +904,9 @@ when isMainModule:
   type
     A = object
       a: seq[string]
+      b: array[2, string]
 
-  # to(A(a: @["Mark", "Park", "Shark"]))
+  `from`(A(a: @["Mark", "Park", "Shark"], b: ["Hello", "World"]))
 
   # echo XmlRpcType(k: xmlRpcStruct, fStruct: @[
   #   ("a", XmlRpcType(k: xmlRpcArray, fArray: @[
