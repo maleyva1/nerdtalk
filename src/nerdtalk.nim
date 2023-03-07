@@ -1,13 +1,15 @@
 import std/macros
+import std/random
 import std/strutils
 import std/times
 import std/xmlparser
 import std/xmltree
 import std/sequtils
 import std/typetraits
-from std/os import fileExists
 from std/math import almostEqual
 import std/base64
+
+var rng {.compileTime.} = initRand(0x1337CAFEBABE)
 
 # -- XML-RPC --
 
@@ -116,9 +118,7 @@ proc `==`*(lhs, rhs: XmlRpcType): bool =
             return false
         return true
       of xmlRpcStruct:
-        for element in zip(lhs.fStruct, rhs.fStruct):
-          let first = element[0]
-          let second = element[1]
+        for (first, second) in zip(lhs.fStruct, rhs.fStruct):
           # Check member names
           if not (first[0] == second[0]):
             return false
@@ -170,8 +170,8 @@ proc `?:`*[T](encode: T): XmlRpcType =
 ## Compile-time object helper types
 type
   xKind = enum
-    strKind, seqKind
-  rType = enum
+    strKind, seqKind, iterableKind
+  rType = enum # For Nim object types
     structType, arrayType
   xType {.acyclic.} = object
     case k: xKind
@@ -180,6 +180,8 @@ type
       of seqKind:
         t: rType
         q: seq[(string, xType)]
+      of iterableKind:
+        z: string
 
 proc isXmlRpcArray(t: NimNode): bool =
   ## Checks if a type definition has the {.xrarray.}
@@ -195,7 +197,7 @@ proc isXmlRpcArray(t: NimNode): bool =
 proc getMembers(recList: NimNode): seq[(string, xType)] =
   ## Get the name and type members of the NimNode `recList`
   ##
-  result = newSeq[(string, xType)]()
+  result = @[]
   for item in recList:
     var name = ""
     for idx in 0 ..< item.len:
@@ -215,7 +217,7 @@ proc getMembers(recList: NimNode): seq[(string, xType)] =
                   case m.kind:
                     # Inheritance is not allowed
                     of nnkOfInherit:
-                      error("Inheritance is not allowed. All lookups must be done at compile-time", m)
+                      error("Inheritance is currently unsuported.", m)
                     of nnkRecList:
                       # Call recursively on object types
                       if kn.getImpl.isXmlRpcArray():
@@ -232,14 +234,16 @@ proc getMembers(recList: NimNode): seq[(string, xType)] =
               else:
                 result.add((name, xType(k: strKind, s: kn.strVal)))
         of nnkBracketExpr:
-          # seq and array types come here
-          # a few things are needed:
-          #   - for the above iterables I, we need the length of I
-          #   - generate: `object`.`name`[i] for all i in I
           let memberType = kn.getTypeImpl
-          let arraySeqType = memberType[0]
-          let elementType = memberType[1]
-          result.add((name, xType(k: seqKind, t: arrayType, q: @[])))
+          let iterableType = memberType[0]
+          var elementType: NimNode
+          if iterableType.strVal == "seq":
+            elementType = memberType[1]
+          elif iterableType.strVal == "array":
+            elementType = memberType[2]
+          else:
+            error("Unknown iterable type", elementType)
+          result.add((name, xType(k: iterableKind, z: elementType.strVal)))
           #error("Sequences and arrays are currently not supported as member types", recList)
         of nnkEmpty:
           discard
@@ -251,10 +255,8 @@ proc constructRpcType(members: seq[(string, xType)], objct: NimNode): seq[NimNod
   ## the name of the member of `objct` and the respective `XmlRpcType`
   ## 
   result = newSeq[NimNode]()
-  for t in members:
-    let memberName = t[0]
-    let memberType = t[1] # object variant
-    var mem = newIdentNode(memberName)
+  for (memberName, memberType) in members:
+    let mem = newIdentNode(memberName)
     var obj = newTree(nnkObjConstr)
     obj.add(newIdentNode("XmlRpcType"))
     var typeNode, xmlRpcNodeKind: NimNode
@@ -306,6 +308,7 @@ proc constructRpcType(members: seq[(string, xType)], objct: NimNode): seq[NimNod
             obj.add(newColonExpr(typeNode, children))
             result.add(obj)
           of arrayType:
+            # Treat members in object
             typeNode = ident("fArray")
             xmlRpcNodeKind = ident("xmlRpcArray")
             obj.add(newColonExpr(ident("k"), xmlRpcNodeKind))
@@ -316,6 +319,9 @@ proc constructRpcType(members: seq[(string, xType)], objct: NimNode): seq[NimNod
             let children = newTree(nnkPrefix, ident("@"), actValue)
             obj.add(newColonExpr(typeNode, children))
             result.add(obj)
+      of iterableKind:
+        # We don't handle this here
+        discard
 
 proc xmlRpcObjectConstruction(body: NimNode): NimNode =
   ## XML-RPC struct types are defined as a tuple[string, XmlRpcType]
@@ -327,15 +333,19 @@ proc xmlRpcObjectConstruction(body: NimNode): NimNode =
 
   debugEcho("[DEBUG OBJECT] Type implementation: " & recList.repr)
 
-  # Get members (name,type)
+  # Get members (name, type)
   var members = getMembers(recList)
 
-  debugEcho("[DEBUG OBJECT] Members" & members.repr)
+  let iterables = members.filter(proc(e: (string, xType)): bool = return e[1].k == iterableKind)
+  if iterables.len > 0:
+    members = members.filter(proc(e: (string, xType)): bool = return e[1].k != iterableKind)
+
+  debugEcho("[DEBUG OBJECT] Members: " & members.repr)
 
   # Construct a dot expression with the above member information
   var memberValues = constructRpcType(members, body)
 
-  debugEcho(memberValues.repr)
+  debugEcho("[DEBUG OBJECT] Construction: " & memberValues.repr)
 
   # Get all the names of the object members
   var names = newSeq[string]()
@@ -344,12 +354,55 @@ proc xmlRpcObjectConstruction(body: NimNode): NimNode =
     names.add(memberName)
 
   # Map mamber names to member values
+  # [(string, XmlRpcType)]
   var mems = zip(names, memberValues)
+
+  let ttt = int.high
+  let sbrm = ident("srebmem" & $rng.rand(ttt))
+  var iterableGeneration = newStmtList()
+  for idx, (name, memberType) in iterables.pairs:
+    # object.member
+    let member = newDotExpr(body, ident(name))
+    # element in "for XX in object.member"
+    let element = ident("element")
+    # var its = newSeq[XmlRpcType]()
+    let its = newVarStmt(ident("its" & $idx), newCall(newTree(nnkBracketExpr, ident("newSeq"), ident("XmlRpcType"))))
+    # `from`(member)
+    let frommer = newCall("from", element)
+    #  its.add(`from`(element))
+    let generator = newCall("add", ident("its" & $idx), frommer)
+    # var its = newSeq[XmlRpcType]()
+    # for element in object.member
+    #  its.add(`from`(element))
+    let loop = newTree(nnkForStmt, element, member, generator)
+    # var iterables = `from`(its)
+    #newTree(nnkObjConstr, ident("XmlRpcType"))
+    let resulting = newVarStmt(ident("i" & $idx), newTree(nnkObjConstr, ident("XmlRpcType"), newTree(nnkExprColonExpr, ident("k"), ident("xmlRpcArray")), newTree(nnkExprColonExpr, ident("fArray"), ident("its" & $idx))))
+    # srebmem.add((name, its))
+    let addToStruct = newCall(ident("add"), sbrm, newTree(nnkTupleConstr, newLit(name), ident("i" & $idx)))
+    let bod = newStmtList(its, loop, resulting, addToStruct)
+    iterableGeneration.add(bod)
+  
+  # TODO: fix name clashes
+  let topMost = newVarStmt(sbrm,
+    newCall(newTree(nnkBracketExpr, ident("newSeq"), newTree(nnkTupleConstr, ident("string"), ident("XmlRpcType")))))
+  var constructor = newStmtList(topMost)
+  for (memberName, memberValue) in mems:
+    # ("name", XmlRpcType)
+    let tup = newTree(nnkTupleConstr, newLit(memberName), memberValue)
+    # members.add(("name", xmlRpcType))
+    let call = newCall(ident("add"), sbrm, tup)
+    constructor.add(call)
+
+  constructor.add(iterableGeneration)
+  debugEcho(constructor.repr)
 
   # Finished XmlRpcStruct type
   result = quote do:
-    let q = `mems`
-    XmlRpcType(k: xmlRpcStruct, fStruct: @q)
+    #`iterableGeneration`
+    `constructor`
+    #let q = `mems`
+    XmlRpcType(k: xmlRpcStruct, fStruct: `sbrm`)
 
 proc xmlRpcArrayContsruction(body: NimNode): NimNode =
   ## Construct an `<array>` type
@@ -479,7 +532,8 @@ proc deserialize(value: XmlNode): XmlRpcType =
     of "dateTime.iso8601":
       try:
         # Year-Month-Day Hour:minutes:seconds.milliseconds
-        r = `from` parse(value.innerText, "YYYY-MM-dd HH:mm:ss:fff")
+        # 2023-03-04T23:21:04-08:00
+        r = `from` parse(value.innerText, "YYYY-MM-dd'T'HH:mm:sszzz")
       except TimeParseError as e:
         raise newException(XmlRpcDecodingException, e.msg)
     of "base64":
@@ -565,12 +619,6 @@ proc getFuncName(name: NimNode): string =
   var funcName = name.repr.replace(".", "_").replace("\"", "")
   return funcName.strip(chars = {'\r', '\n', '\t'})
 
-proc getFuncName(name: string) : string =
-  ## Get the function name from a `string`
-  ##
-  var funcName = name.replace(".", "_").replace("\"", "")
-  return funcName.strip(chars = {'\r', '\n', '\t'})
-
 proc generateFuncWithNoParams(f: NimNode, name: string): NimNode =
   ## Generate a function with no parameters
   ##
@@ -583,95 +631,103 @@ proc generateFuncWithNoParams(f: NimNode, name: string): NimNode =
   f.add(funcBody)
   return f
 
-macro xmlRpcSpecFromFile*(spec: static[string]): untyped =
-  ## Compile time code generation from a XMl spec file.
-  ##
-  ## The cousin of `xmlRpcSpec`, this macro generates code
-  ## from a file at compile time.
-  ##
-  ## This macro expects the XML file to adhere to the following:
-  ##  - a single root `<spec>`
-  ##  - any number of `<method>`s
-  ##
-  ## Each `<method>` tag consists of:
-  ##  - a `<name>`
-  ##  - a `<params>` tag
-  ##
-  ## Each `<params>` tag consists of:
-  ##  - any number of `<param>` tags
-  ##
-  ## A `<param>` tag consists of:
-  ##  - a `<name>`
-  ##  - a `<type>`
-  ##
-  ## The set of possible `<type>` values are:
-  ##  - string
-  ##  - int
-  ##  - float
-  ##  - boolean
-  ##
-  ## Example::
-  ##  <spec>
-  ##    <method>
-  ##      <name>download</name>
-  ##      <params>
-  ##        <param>
-  ##          <name>hash</name>
-  ##          <type>string</type>
-  ##        </param>
-  ##      </params>
-  ##    </method>
-  ##  </spec>
-  ##
-  ## The above example produces the following code::
-  ##  proc download(hash: string) : string
-  ##
-  ##
-  if not fileExists(spec):
-    error(spec & " does not exist")
+when defined(specFromFile):
+  from std/os import fileExists
+  proc getFuncName(name: string) : string =
+    ## Get the function name from a `string`
+    ##
+    var funcName = name.replace(".", "_").replace("\"", "")
+    return funcName.strip(chars = {'\r', '\n', '\t'})
 
-  var 
-    specSource = staticRead(spec)
-    specXml: XmlNode
+  macro xmlRpcSpecFromFile(spec: static[string]): untyped =
+    ## Compile time code generation from a XMl spec file.
+    ##
+    ## The cousin of `xmlRpcSpec`, this macro generates code
+    ## from a file at compile time.
+    ##
+    ## This macro expects the XML file to adhere to the following:
+    ##  - a single root `<spec>`
+    ##  - any number of `<method>`s
+    ##
+    ## Each `<method>` tag consists of:
+    ##  - a `<name>`
+    ##  - a `<params>` tag
+    ##
+    ## Each `<params>` tag consists of:
+    ##  - any number of `<param>` tags
+    ##
+    ## A `<param>` tag consists of:
+    ##  - a `<name>`
+    ##  - a `<type>`
+    ##
+    ## The set of possible `<type>` values are:
+    ##  - string
+    ##  - int
+    ##  - float
+    ##  - boolean
+    ##
+    ## Example::
+    ##  <spec>
+    ##    <method>
+    ##      <name>download</name>
+    ##      <params>
+    ##        <param>
+    ##          <name>hash</name>
+    ##          <type>string</type>
+    ##        </param>
+    ##      </params>
+    ##    </method>
+    ##  </spec>
+    ##
+    ## The above example produces the following code::
+    ##  proc download(hash: string) : string
+    ##
+    ##
+    if not fileExists(spec):
+      error(spec & " does not exist")
 
-  try:
-    specXml = parseXml(specSource)
-  except Exception as e:
-    error("Unable to parse file " & e.msg)
+    var 
+      specSource = staticRead(spec)
+      specXml: XmlNode
 
-  var specs = newSeq[NimNode]()
-  for meth in specXml:
-    let mName = meth[0]
-    let mParams = meth[1]
+    try:
+      specXml = parseXml(specSource)
+    except Exception as e:
+      error("Unable to parse file " & e.msg)
 
-    var specFunc = newNimNode(nnkProcDef)
-    specFunc.add(ident(getFuncName(mName.innerText)))
-    specFunc.add(newEmptyNode(), newEmptyNode())
-    let paramsNode = newNimNode(nnkFormalParams)
-    paramsNode.add(ident("string"))
+    var specs = newSeq[NimNode]()
+    for meth in specXml:
+      let mName = meth[0]
+      let mParams = meth[1]
 
-    var paramsBody = newSeq[NimNode]()
-    paramsBody.add(newLit(mName.innerText))
-    for param in mParams:
-      let paramName = param[0]
-      let paramType = param[1]
-      let paramNameNode = ident(paramName.innerText)
-      let paramTypeNode = ident(paramType.innerText)
-      let paramNode = newTree(nnkIdentDefs, paramNameNode, paramTypeNode,
-          newEmptyNode())
-      paramsNode.add(paramNode)
-      paramsBody.add(newTree(nnkPrefix, ident("to"), paramNameNode))
-    specFunc.add(paramsNode)
-    specFunc.add(newEmptyNode(), newEmptyNode())
-    let funcbody = newStmtList()
-    funcBody.add(newAssignment(ident("result"), newCall(ident("getMethodCall"), paramsBody)))
-    specFunc.add(funcBody)
-    specs.add(specFunc)
+      var specFunc = newNimNode(nnkProcDef)
+      specFunc.add(ident(getFuncName(mName.innerText)))
+      specFunc.add(newEmptyNode(), newEmptyNode())
+      let paramsNode = newNimNode(nnkFormalParams)
+      paramsNode.add(ident("string"))
 
-  # Pack all the generated code into a statement list
-  result = newStmtList()
-  for item in specs:
-    result.add(item)
+      var paramsBody = newSeq[NimNode]()
+      paramsBody.add(newLit(mName.innerText))
+      for param in mParams:
+        let paramName = param[0]
+        let paramType = param[1]
+        let paramNameNode = ident(paramName.innerText)
+        let paramTypeNode = ident(paramType.innerText)
+        let paramNode = newTree(nnkIdentDefs, paramNameNode, paramTypeNode,
+            newEmptyNode())
+        paramsNode.add(paramNode)
+        paramsBody.add(newTree(nnkPrefix, ident("to"), paramNameNode))
+      specFunc.add(paramsNode)
+      specFunc.add(newEmptyNode(), newEmptyNode())
+      let funcbody = newStmtList()
+      funcBody.add(newAssignment(ident("result"), newCall(ident("getMethodCall"), paramsBody)))
+      specFunc.add(funcBody)
+      specs.add(specFunc)
+
+    # Pack all the generated code into a statement list
+    result = newStmtList()
+    for item in specs:
+      result.add(item)
 
 macro xmlRpcSpec*(body: untyped): untyped =
   ## DSL macro for XML-RPC specification.
@@ -776,7 +832,7 @@ macro xmlRpcSpec*(body: untyped): untyped =
       error("Invalid identifier", ident)
 
   # Handle any leftover that have no params
-  if funcs.len != 0:
+  if funcs.len > 0:
     let prev = funcs.pop()
     let name = prev[0]
     let pastFunc = prev[1]
@@ -905,8 +961,32 @@ when isMainModule:
     A = object
       a: seq[string]
       b: array[2, string]
+    B = object
+      a: string
+      b: int
 
-  `from`(A(a: @["Mark", "Park", "Shark"], b: ["Hello", "World"]))
+  echo `from`(@["mark", "mark"])
+  let temp = A(a: @["Mark", "Park", "Shark"], b: ["Hello", "World"])
+  var t = newSeq[XmlRpcType]()
+  for element in temp.a:
+    t.add(`from`(element))
+  let conv = XmlRpcType(k: xmlRpcStruct, fStruct: @[
+   ("a", XmlRpcType(k: xmlRpcArray, fArray: @[`from`(temp.a[0]), `from`(temp.a[1]), `from`(temp.a[2])])),
+   ("b", XmlRpcType(k: xmlRpcArray, fArray: t)),
+  ])
+  echo conv
+  # let temp = @["mark", "park"]
+  # var res = newSeq[XmlRpcType]()
+  # for element in temp:
+  #   res.add(`from`(element))
+  # XmlRpcType(k: xmlRpcArray, 
+  let q = A(a: @["Mark", "Park", "Shark"], b: ["Hello", "World"])
+  echo `from`(q)
+  let r = B(a: "sneed", b: 1)
+  echo `from`(r)
+  echo from(B(a:"Feed", b: 2))
+  #dumpTree:
+  #  A(a: @["Mark", "Park", "Shark"], b: ["Hello", "World"])
 
   # echo XmlRpcType(k: xmlRpcStruct, fStruct: @[
   #   ("a", XmlRpcType(k: xmlRpcArray, fArray: @[

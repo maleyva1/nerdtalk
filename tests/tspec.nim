@@ -63,8 +63,8 @@ suite "XMl-RPC Spec":
         let a = parseXml(delete_user(i))
         let b = parseXml(response2)
         check $a == $b
-    test "XML-RPC spec from file":
-        xmlRpcSpecFromFile("tests/testspec.xml")
+    # test "XML-RPC spec from file":
+    #     xmlRpcSpecFromFile("tests/testspec.xml")
 
-        echo get_account(1)
-        echo update_account(1, "Job", "Feed&Seed")
+    #     echo get_account(1)
+    #     echo update_account(1, "Job", "Feed&Seed")
