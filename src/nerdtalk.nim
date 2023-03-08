@@ -352,7 +352,7 @@ proc xmlRpcObjectConstruction(body: NimNode; isArray: bool): NimNode =
   # Map mamber names to member values
   # [(string, XmlRpcType)]
   var mems: seq[(string, NimNode)] = @[]
-  if isArray:
+  if not isArray:
     mems = zip(names, memberValues)
 
   let ttt = int.high
@@ -784,7 +784,7 @@ macro xmlRpcSpec*(body: untyped): untyped =
 
       if funcs.len != 0:
         let pastFunc = funcs.pop()
-        let name = pastFunc[0]
+        let name = pastFunc[0].strip()
         let pFunc = pastFunc[1]
         # All XML-RPC calls return XmlNode
         # This specific case creates a proc with zero parameters
@@ -794,15 +794,14 @@ macro xmlRpcSpec*(body: untyped): untyped =
       call[1].expectKind nnkStmtList
       let params = call[1]
       let prev = funcs.pop()
-      let name = prev[0]
-      let currentFunc = prev[1]
+      let (name, currentFunc) = prev
       # All XML-RPC calls return XmlNode
       let paramsNode = newNimNode(nnkFormalParams)
       paramsNode.add(ident("string"))
 
       var paramsBody = newSeq[NimNode]()
       # XML-RPC function name is the first parameter
-      paramsBody.add(newLit(name))
+      paramsBody.add(newLit(name.strip()))
 
       # Generate the procedure prototype and params in single loop
       for param in params:
@@ -814,7 +813,7 @@ macro xmlRpcSpec*(body: untyped): untyped =
             newEmptyNode())
         paramsNode.add(param)
       # Params get converted into XmlRpc type by using macro `to`
-        paramsBody.add(newTree(nnkPrefix, ident("from"), paramNameNode))
+        paramsBody.add(newCall(ident("from"), paramNameNode))
       currentFunc.add(paramsNode)
       # Function body
       currentFunc.add(newEmptyNode(), newEmptyNode())
@@ -831,7 +830,7 @@ macro xmlRpcSpec*(body: untyped): untyped =
     let prev = funcs.pop()
     let name = prev[0]
     let pastFunc = prev[1]
-    spec.add(generateFuncWithNoParams(pastFunc, name))
+    spec.add(generateFuncWithNoParams(pastFunc, name.strip()))
 
   # Pack all the generated code into a statement list
   result = newStmtList()
@@ -963,7 +962,11 @@ when isMainModule:
       a: int
       b: seq[string]
       c: array[2, string]
+    D = object
+      a: int
+      b: float
 
   echo `from`(A(a: @["Mark", "Park", "Shark"], b: ["Hello", "World"]))
   echo `from`(B(a:"Feed", b: 2))
   echo `from`(C(a: 1, b: @["Feed"], c: ["Alan", "Mark"] ))
+  echo `from`(D(a: 1, b: 1.0))

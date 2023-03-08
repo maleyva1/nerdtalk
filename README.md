@@ -60,8 +60,8 @@ Any type `T` can map to `<base64>` iff `T` implements `$`
 
     XML-RPC allows different types within `<array>`.
     The `{.xarray.}` allows users to do so with custom
-    object types since sequences and arrays require
-    the same type.
+    object types since sequences and arrays require all
+    elements to be of the same type.
 
 ## TODO
 
