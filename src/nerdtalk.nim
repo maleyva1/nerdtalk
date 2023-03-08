@@ -814,7 +814,7 @@ macro xmlRpcSpec*(body: untyped): untyped =
             newEmptyNode())
         paramsNode.add(param)
       # Params get converted into XmlRpc type by using macro `to`
-        paramsBody.add(newTree(nnkPrefix, ident("to"), paramNameNode))
+        paramsBody.add(newTree(nnkPrefix, ident("from"), paramNameNode))
       currentFunc.add(paramsNode)
       # Function body
       currentFunc.add(newEmptyNode(), newEmptyNode())
