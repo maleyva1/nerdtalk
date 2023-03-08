@@ -395,6 +395,7 @@ proc xmlRpcObjectConstruction(body: NimNode; isArray: bool): NimNode =
   let topMost = newVarStmt(sbrm,
     newCall(newTree(nnkBracketExpr, ident("newSeq"), seqType)))
   # We want an expression for the result but we might need to operate on iterable types at run-time
+  # So we use a statement expression:
   # `from`(OBJECT) expands to (STMT1; STMT2; ...; RESULT)
   var constructor = newTree(nnkStmtListExpr, topMost)
   for (memberName, memberValue) in mems:
@@ -526,7 +527,6 @@ proc deserialize(value: XmlNode): XmlRpcType =
         raise newException(XmlRpcDecodingException, e.msg)
     of "dateTime.iso8601":
       try:
-        # Year-Month-Day Hour:minutes:seconds.milliseconds
         # 2023-03-04T23:21:04-08:00
         r = `from` parse(value.innerText, "YYYY-MM-dd'T'HH:mm:sszzz")
       except TimeParseError as e:
@@ -964,19 +964,6 @@ when isMainModule:
       b: seq[string]
       c: array[2, string]
 
-  echo `from`(@["mark", "mark"])
-  let temp = A(a: @["Mark", "Park", "Shark"], b: ["Hello", "World"])
-  var t = newSeq[XmlRpcType]()
-  for element in temp.a:
-    t.add(`from`(element))
-  let conv = XmlRpcType(k: xmlRpcStruct, fStruct: @[
-   ("a", XmlRpcType(k: xmlRpcArray, fArray: @[`from`(temp.a[0]), `from`(temp.a[1]), `from`(temp.a[2])])),
-   ("b", XmlRpcType(k: xmlRpcArray, fArray: t)),
-  ])
-  echo conv
-  let q = A(a: @["Mark", "Park", "Shark"], b: ["Hello", "World"])
-  echo `from`(q)
-  let r = B(a: "sneed", b: 1)
-  echo `from`(r)
+  echo `from`(A(a: @["Mark", "Park", "Shark"], b: ["Hello", "World"]))
   echo `from`(B(a:"Feed", b: 2))
   echo `from`(C(a: 1, b: @["Feed"], c: ["Alan", "Mark"] ))
