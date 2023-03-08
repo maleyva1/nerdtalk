@@ -323,7 +323,7 @@ proc constructRpcType(members: seq[(string, xType)], objct: NimNode): seq[NimNod
         # We don't handle this here
         discard
 
-proc xmlRpcObjectConstruction(body: NimNode): NimNode =
+proc xmlRpcObjectConstruction(body: NimNode; isArray: bool): NimNode =
   ## XML-RPC struct types are defined as a tuple[string, XmlRpcType]
   ## The first item is the member name (i.e. the field name)
   ## The second item is the value which is itself an XmlRpcType
@@ -331,21 +331,17 @@ proc xmlRpcObjectConstruction(body: NimNode): NimNode =
   let typeImpl = body.getTypeImpl
   let recList = typeImpl[2]
 
-  debugEcho("[DEBUG OBJECT] Type implementation: " & recList.repr)
-
   # Get members (name, type)
   var members = getMembers(recList)
 
+  # Find any iterables and remove them
+  # from the 
   let iterables = members.filter(proc(e: (string, xType)): bool = return e[1].k == iterableKind)
   if iterables.len > 0:
     members = members.filter(proc(e: (string, xType)): bool = return e[1].k != iterableKind)
 
-  debugEcho("[DEBUG OBJECT] Members: " & members.repr)
-
   # Construct a dot expression with the above member information
   var memberValues = constructRpcType(members, body)
-
-  debugEcho("[DEBUG OBJECT] Construction: " & memberValues.repr)
 
   # Get all the names of the object members
   var names = newSeq[string]()
@@ -355,7 +351,9 @@ proc xmlRpcObjectConstruction(body: NimNode): NimNode =
 
   # Map mamber names to member values
   # [(string, XmlRpcType)]
-  var mems = zip(names, memberValues)
+  var mems: seq[(string, NimNode)] = @[]
+  if isArray:
+    mems = zip(names, memberValues)
 
   let ttt = int.high
   let sbrm = ident("srebmem" & $rng.rand(ttt))
@@ -366,59 +364,61 @@ proc xmlRpcObjectConstruction(body: NimNode): NimNode =
     # element in "for XX in object.member"
     let element = ident("element")
     # var its = newSeq[XmlRpcType]()
-    let its = newVarStmt(ident("its" & $idx), newCall(newTree(nnkBracketExpr, ident("newSeq"), ident("XmlRpcType"))))
+    let rando = ident("its" & $rng.rand(ttt))
+    let its = newVarStmt(rando, newCall(newTree(nnkBracketExpr, ident("newSeq"), ident("XmlRpcType"))))
     # `from`(member)
     let frommer = newCall("from", element)
     #  its.add(`from`(element))
-    let generator = newCall("add", ident("its" & $idx), frommer)
+    let generator = newCall("add", rando, frommer)
     # var its = newSeq[XmlRpcType]()
     # for element in object.member
     #  its.add(`from`(element))
     let loop = newTree(nnkForStmt, element, member, generator)
     # var iterables = `from`(its)
-    #newTree(nnkObjConstr, ident("XmlRpcType"))
-    let resulting = newVarStmt(ident("i" & $idx), newTree(nnkObjConstr, ident("XmlRpcType"), newTree(nnkExprColonExpr, ident("k"), ident("xmlRpcArray")), newTree(nnkExprColonExpr, ident("fArray"), ident("its" & $idx))))
+    let rando2 = ident("i" & $rng.rand(ttt))
+    let resulting = newVarStmt(rando2, newTree(nnkObjConstr, ident("XmlRpcType"), newTree(nnkExprColonExpr, ident("k"), ident("xmlRpcArray")), newTree(nnkExprColonExpr, ident("fArray"), rando)))
     # srebmem.add((name, its))
-    let addToStruct = newCall(ident("add"), sbrm, newTree(nnkTupleConstr, newLit(name), ident("i" & $idx)))
+    var addToStruct: NimNode
+    if isArray:
+      addToStruct = newCall(ident("add"), sbrm, rando2)
+    else:
+      addToStruct = newCall(ident("add"), sbrm, newTree(nnkTupleConstr, newLit(name), rando2))
     let bod = newStmtList(its, loop, resulting, addToStruct)
     iterableGeneration.add(bod)
+    iterableGeneration.add(newEmptyNode())
   
-  # TODO: fix name clashes
+  var seqType: NimNode
+  if isArray:
+    seqType = ident("XmlRpcType")
+  else:
+    seqType = newTree(nnkTupleConstr, ident("string"), ident("XmlRpcType"))
   let topMost = newVarStmt(sbrm,
-    newCall(newTree(nnkBracketExpr, ident("newSeq"), newTree(nnkTupleConstr, ident("string"), ident("XmlRpcType")))))
-  var constructor = newStmtList(topMost)
+    newCall(newTree(nnkBracketExpr, ident("newSeq"), seqType)))
+  # We want an expression for the result but we might need to operate on iterable types at run-time
+  # `from`(OBJECT) expands to (STMT1; STMT2; ...; RESULT)
+  var constructor = newTree(nnkStmtListExpr, topMost)
   for (memberName, memberValue) in mems:
     # ("name", XmlRpcType)
-    let tup = newTree(nnkTupleConstr, newLit(memberName), memberValue)
+    var tMem: NimNode
+    if isArray:
+      tMem = memberValue
+    else:
+      tMem = newTree(nnkTupleConstr, newLit(memberName), memberValue)
     # members.add(("name", xmlRpcType))
-    let call = newCall(ident("add"), sbrm, tup)
-    constructor.add(call)
+    let call = newCall(ident("add"), sbrm, tMem)
+    constructor.add(newEmptyNode(), call)
 
-  constructor.add(iterableGeneration)
-  debugEcho(constructor.repr)
+  constructor.add(newEmptyNode(), iterableGeneration)
+
+  let resultingType = if isArray: "xmlRpcArray" else: "xmlRpcStruct"
+  let resultingContainer = if isArray: "fArray" else: "fStruct"
+
+  let finalResult = newTree(nnkObjConstr, ident("XmlRpcType"), newTree(nnkExprColonExpr,
+    ident("k"), ident(resultingType)), newTree(nnkExprColonExpr, ident(resultingContainer), sbrm))
+  constructor.add(newEmptyNode(), finalResult)
 
   # Finished XmlRpcStruct type
-  result = quote do:
-    #`iterableGeneration`
-    `constructor`
-    #let q = `mems`
-    XmlRpcType(k: xmlRpcStruct, fStruct: `sbrm`)
-
-proc xmlRpcArrayContsruction(body: NimNode): NimNode =
-  ## Construct an `<array>` type
-  ## 
-  let typeImpl = body.getTypeImpl
-  let recList = typeImpl[2]
-
-  # Get members (name, type)
-  var members = getMembers(recList)
-
-  # Construct a dot expression with the above member information
-  var memberValues = constructRpcType(members, body)
-
-  result = quote do:
-    let q = `memberValues`
-    XmlRpcType(k: xmlRpcArray, fArray: @q)
+  result = constructor
 
 macro `from`*(body: typed): untyped =
   ## Construct `XmlRpcType`s from
@@ -477,13 +477,8 @@ macro `from`*(body: typed): untyped =
         case body.kind:
           of nnkObjConstr, nnkSym:
             let t = body.getTypeInst().getImpl()
-            # Check if marked with `xarray` pragma
-            if t.isXmlRpcArray():
-              # Construct XML-RPC array type
-              result = xmlRpcArrayContsruction(body)
-            else:
-              # Construct XML-RPC struct type
-              result = xmlRpcObjectConstruction(body)
+            # Construct XML-RPC array type or XML-RPC array type
+            result = xmlRpcObjectConstruction(body, t.isXmlRpcArray())
           else:
             error("Invalid body", body)
     else:
@@ -961,9 +956,13 @@ when isMainModule:
     A = object
       a: seq[string]
       b: array[2, string]
-    B = object
+    B {.xrarray.} = object
       a: string
       b: int
+    C {.xrarray.} = object
+      a: int
+      b: seq[string]
+      c: array[2, string]
 
   echo `from`(@["mark", "mark"])
   let temp = A(a: @["Mark", "Park", "Shark"], b: ["Hello", "World"])
@@ -975,23 +974,9 @@ when isMainModule:
    ("b", XmlRpcType(k: xmlRpcArray, fArray: t)),
   ])
   echo conv
-  # let temp = @["mark", "park"]
-  # var res = newSeq[XmlRpcType]()
-  # for element in temp:
-  #   res.add(`from`(element))
-  # XmlRpcType(k: xmlRpcArray, 
   let q = A(a: @["Mark", "Park", "Shark"], b: ["Hello", "World"])
   echo `from`(q)
   let r = B(a: "sneed", b: 1)
   echo `from`(r)
-  echo from(B(a:"Feed", b: 2))
-  #dumpTree:
-  #  A(a: @["Mark", "Park", "Shark"], b: ["Hello", "World"])
-
-  # echo XmlRpcType(k: xmlRpcStruct, fStruct: @[
-  #   ("a", XmlRpcType(k: xmlRpcArray, fArray: @[
-  #     XmlRpcType(k: xmlRpcString, fString: "Mark"),
-  #     XmlRpcType(k: xmlRpcString, fString: "Park"),
-  #     XmlRpcType(k: xmlRpcString, fString: "Shark")
-  #   ]))
-  # ])
+  echo `from`(B(a:"Feed", b: 2))
+  echo `from`(C(a: 1, b: @["Feed"], c: ["Alan", "Mark"] ))

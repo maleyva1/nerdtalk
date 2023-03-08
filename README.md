@@ -65,7 +65,6 @@ Any type `T` can map to `<base64>` iff `T` implements `$`
 
 ## TODO
 
-* Fix `from` macro to be used in expressions
 * Add support for deserialization between `XmlRpcType` and user-types a la `std/json`
 * Add more tests for deserialization and exception handling
 
