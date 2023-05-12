@@ -1,6 +1,9 @@
 # nerdtalk
 
-`nerdtalk` is an XML-RPC implementation in pure Nim.
+`nerdtalk` is an [XML-RPC](http://xmlrpc.com/) implementation in pure Nim.
+
+`nerdtalk` is still very much in development so use this
+library at your own discretion.
 
 ## Example Usage
 
