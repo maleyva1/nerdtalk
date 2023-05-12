@@ -3,7 +3,7 @@
 version       = "0.1.0"
 author        = "Mark Leyva"
 description   = "XML-RPC library"
-license       = "GPL-3.0-or-later"
+license       = "MIT"
 srcDir        = "src"
 
 
