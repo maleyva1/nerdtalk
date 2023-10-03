@@ -2,7 +2,7 @@
 
 `nerdtalk` is an [XML-RPC](http://xmlrpc.com/) implementation in pure Nim.
 
-`nerdtalk` is still very much in development so use this
+❗ `nerdtalk` is still very much in development so use this
 library at your own discretion.
 
 ## Example Usage
@@ -33,6 +33,12 @@ import nerdtalk
 socket.read(buffer, 1023)
 var response = :!buffer
 ```
+
+## Documentation
+
+Documentation can be generated with:
+
+`nimble docs`
 
 ## Implementation
 
@@ -70,4 +76,3 @@ Any type `T` can map to `<base64>` iff `T` implements `$`
 
 * Add support for deserialization between `XmlRpcType` and user-types a la `std/json`
 * Add more tests for deserialization and exception handling
-

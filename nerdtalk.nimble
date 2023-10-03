@@ -12,4 +12,4 @@ srcDir        = "src"
 requires "nim >= 1.6.10"
 
 task docs,"Generate documentation":
-    exec "nim doc --project --index:on --outdir:htmldocs src/nerdtalk.nim"
+    exec "nim doc --project --index:on --outdir:nerdtalk src/nerdtalk.nim"

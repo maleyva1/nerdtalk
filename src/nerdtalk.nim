@@ -6,8 +6,9 @@ import std/xmlparser
 import std/xmltree
 import std/sequtils
 import std/typetraits
-from std/math import almostEqual
 import std/base64
+
+from std/math import almostEqual
 
 var rng {.compileTime.} = initRand(0x1337CAFEBABE)
 
@@ -15,7 +16,8 @@ var rng {.compileTime.} = initRand(0x1337CAFEBABE)
 
 ## `XML-RPC<http://xmlrpc.com/spec.md>`_ implementation in pure Nim.
 ##
-## Basic usage::
+## Basic usage:
+## ```nim
 ##  type
 ##    Acccount = object
 ##      id: int
@@ -26,6 +28,7 @@ var rng {.compileTime.} = initRand(0x1337CAFEBABE)
 ##    params:
 ##      account: Account
 ##  update_account(Account(1001, "John", now()))
+## ```
 
 type
   XmlRpcDecodingException* = object of ValueError ## \
@@ -40,7 +43,7 @@ type
     xmlRpcStruct,
     xmlRpcArray
   XmlRpcResponseKind* = enum ## \
-  ## Discrimantor kind for XML-RPC responses
+  ## Discriminator kind for XML-RPC responses
   ## 
   ## According to the XML-RPC spec, an XML-RPC response
   ## is either a response with a sole `<params>` node or
@@ -89,7 +92,7 @@ proc `[]`*(this: XmlRpcType, key: string): XmlRpcType {.raises: [KeyError].} =
       return element[1]
   raise newException(KeyError, key & " does not exist")
 
-proc `~=`*(lhs, rhs: XmlRpcType): bool {.inline.} =
+func `~=`*(lhs, rhs: XmlRpcType): bool {.inline.} =
   ## Checks if `lhs` and `rhs` are the same kind of
   ## `XmlRpcItemKind`
   ##
@@ -142,28 +145,32 @@ proc `==`*(lhs, rhs: XmlRpcResponse): bool =
 template xrarray*() {.pragma.} ## \
 ## Used to discriminate between XML-RPC structs
 ## and XML-RPC arrays. The presence of this pragma
-## on an object type causes the `to` macro to
+## on an object type causes the `from` macro to
 ## generate an XML-RPC array.
 ## 
-## Example::
+## Example:
+## ```nim
 ##  type
 ##    Persons {.xrarray.} = object
 ##      p: string
 ##      d: int
+## ```
 ## 
 ## **Note**: The same warning applies for objects inheriting
 ## from `RootObj`.
 ## 
 ## **Note**: `seq[T]` and `arr[T]` types also map to
-## `<array>` where very element in the array is of type `T` which
+## `<array>` where every element in the array is of type `T` which
 ## differs from the case where every element in `<array>` could be
 ## of different types `A`, `B`, etc...
 ##
 
+# Could probably use Nim concepts here to
+# ensure `T` implements `$`
 proc `?:`*[T](encode: T): XmlRpcType =
   ## Generic constructor for `XmlRpcType` of `Base64`.
   ##
-  ## Note that `T` must have the `$` proc defined for it
+  ## **Note** that `T` must have the `$` proc defined for it
   ##
   result = XmlRpcType(k: xmlRpcBase64, fString: encode($encode))
 
@@ -253,7 +260,7 @@ proc getMembers(recList: NimNode): seq[(string, xType)] =
 proc constructRpcType(members: seq[(string, xType)], objct: NimNode): seq[NimNode] =
   ## `members` is a sequence of tuples that contain
   ## the name of the member of `objct` and the respective `XmlRpcType`
-  ## 
+  ##
   result = newSeq[NimNode]()
   for (memberName, memberType) in members:
     let mem = newIdentNode(memberName)
@@ -324,9 +331,12 @@ proc constructRpcType(members: seq[(string, xType)], objct: NimNode): seq[NimNod
         discard
 
 proc xmlRpcObjectConstruction(body: NimNode; isArray: bool): NimNode =
-  ## XML-RPC struct types are defined as a tuple[string, XmlRpcType]
-  ## The first item is the member name (i.e. the field name)
-  ## The second item is the value which is itself an XmlRpcType
+  ## XML-RPC struct types are defined as a tuple[string, XmlRpcType].
+  ## The first item is the member name (i.e. the field name).
+  ## The second item is the value which is itself an XmlRpcType.
+  ##
+  ## `isArray` denotes whether `body` should be treated as an
+  ## `<array>` or `<struct>`.
   ##
   let typeImpl = body.getTypeImpl
   let recList = typeImpl[2]
@@ -335,8 +345,9 @@ proc xmlRpcObjectConstruction(body: NimNode; isArray: bool): NimNode =
   var members = getMembers(recList)
 
   # Find any iterables and remove them
-  # from the 
-  let iterables = members.filter(proc(e: (string, xType)): bool = return e[1].k == iterableKind)
+  # from the
+  let iterables = members.filter(proc(e: (string, xType)): bool = return e[
+      1].k == iterableKind)
   if iterables.len > 0:
     members = members.filter(proc(e: (string, xType)): bool = return e[1].k != iterableKind)
 
@@ -349,7 +360,7 @@ proc xmlRpcObjectConstruction(body: NimNode; isArray: bool): NimNode =
     let memberName = v[0]
     names.add(memberName)
 
-  # Map mamber names to member values
+  # Map member names to member values
   # [(string, XmlRpcType)]
   var mems: seq[(string, NimNode)] = @[]
   if not isArray:
@@ -365,7 +376,8 @@ proc xmlRpcObjectConstruction(body: NimNode; isArray: bool): NimNode =
     let element = ident("element")
     # var its = newSeq[XmlRpcType]()
     let rando = ident("its" & $rng.rand(ttt))
-    let its = newVarStmt(rando, newCall(newTree(nnkBracketExpr, ident("newSeq"), ident("XmlRpcType"))))
+    let its = newVarStmt(rando, newCall(newTree(nnkBracketExpr, ident("newSeq"),
+        ident("XmlRpcType"))))
     # `from`(member)
     let frommer = newCall("from", element)
     #  its.add(`from`(element))
@@ -376,17 +388,20 @@ proc xmlRpcObjectConstruction(body: NimNode; isArray: bool): NimNode =
     let loop = newTree(nnkForStmt, element, member, generator)
     # var iterables = `from`(its)
     let rando2 = ident("i" & $rng.rand(ttt))
-    let resulting = newVarStmt(rando2, newTree(nnkObjConstr, ident("XmlRpcType"), newTree(nnkExprColonExpr, ident("k"), ident("xmlRpcArray")), newTree(nnkExprColonExpr, ident("fArray"), rando)))
+    let resulting = newVarStmt(rando2, newTree(nnkObjConstr, ident(
+        "XmlRpcType"), newTree(nnkExprColonExpr, ident("k"), ident(
+        "xmlRpcArray")), newTree(nnkExprColonExpr, ident("fArray"), rando)))
     # srebmem.add((name, its))
     var addToStruct: NimNode
     if isArray:
       addToStruct = newCall(ident("add"), sbrm, rando2)
     else:
-      addToStruct = newCall(ident("add"), sbrm, newTree(nnkTupleConstr, newLit(name), rando2))
+      addToStruct = newCall(ident("add"), sbrm, newTree(nnkTupleConstr, newLit(
+          name), rando2))
     let bod = newStmtList(its, loop, resulting, addToStruct)
     iterableGeneration.add(bod)
     iterableGeneration.add(newEmptyNode())
-  
+
   var seqType: NimNode
   if isArray:
     seqType = ident("XmlRpcType")
@@ -415,7 +430,8 @@ proc xmlRpcObjectConstruction(body: NimNode; isArray: bool): NimNode =
   let resultingContainer = if isArray: "fArray" else: "fStruct"
 
   let finalResult = newTree(nnkObjConstr, ident("XmlRpcType"), newTree(nnkExprColonExpr,
-    ident("k"), ident(resultingType)), newTree(nnkExprColonExpr, ident(resultingContainer), sbrm))
+    ident("k"), ident(resultingType)), newTree(nnkExprColonExpr, ident(
+        resultingContainer), sbrm))
   constructor.add(newEmptyNode(), finalResult)
 
   # Finished XmlRpcStruct type
@@ -434,9 +450,11 @@ macro `from`*(body: typed): untyped =
   ## - `array[T]`
   ## - `object`
   ##
-  ## Usage::
+  ## Usage:
+  ## ```nim
   ##  let temp = to 2.0
   ##  let result = getMethodCall("set_temp", temp)
+  ## ```
   ##
   ## **Warning**: The library is limited to `object`
   ## types that **do not** inhereit from `RootObj`.
@@ -469,7 +487,7 @@ macro `from`*(body: typed): untyped =
         XmlRpcType(k: xmlRpcArray, fArray: xRpcElements)
     of ntyObject:
       let ntype = node.getTypeInst()
-      # DateTime objects map directly to XmlRpcType `DateTime`
+      # `DateTime` objects map directly to XmlRpcType `DateTime`
       if ntype.strVal == "DateTime":
         result = quote do:
           XmlRpcType(k: xmlRpcDateTime, fDateTime: `body`)
@@ -485,20 +503,11 @@ macro `from`*(body: typed): untyped =
     else:
       error("Unspported type", body)
 
-# Todo: Implement
-proc to*[T](this: XmlRpcType, t: typedesc[T]): T =
-  ## Compile-time macro for marshalling from `XmlRpcTypes`
-  ## to user types
-  ##
-  result
-
-proc allDigits(str: string): bool =
+func allDigits(str: string): bool {.inline.} =
   ## Return `true` if all `c` in `str`
   ## are in {'0'..'9'}
-  for i in str:
-    if not i.isDigit():
-      return false
-  return true
+  ##
+  return str.allCharsInSet(Digits)
 
 proc deserialize(value: XmlNode): XmlRpcType =
   ## Helper proc for deserialization of XML-RPC value type
@@ -510,25 +519,25 @@ proc deserialize(value: XmlNode): XmlRpcType =
   case xmlType:
     of "int":
       try:
-        r = `from` parseInt(value.innerText)
+        r = `from`parseInt(value.innerText)
       except ValueError as e:
         raise newException(XmlRpcDecodingException, e.msg)
     of "double":
       try:
-        r = `from` parseFloat(value.innerText)
+        r = `from`parseFloat(value.innerText)
       except ValueError as e:
         raise newException(XmlRpcDecodingException, e.msg)
     of "string":
-      r = `from` value.innerText
+      r = `from`value.innerText
     of "boolean":
       try:
-        r = `from` parseBool(value.innerText)
+        r = `from`parseBool(value.innerText)
       except ValueError as e:
         raise newException(XmlRpcDecodingException, e.msg)
     of "dateTime.iso8601":
       try:
         # 2023-03-04T23:21:04-08:00
-        r = `from` parse(value.innerText, "YYYY-MM-dd'T'HH:mm:sszzz")
+        r = `from`parse(value.innerText, "YYYY-MM-dd'T'HH:mm:sszzz")
       except TimeParseError as e:
         raise newException(XmlRpcDecodingException, e.msg)
     of "base64":
@@ -628,7 +637,7 @@ proc generateFuncWithNoParams(f: NimNode, name: string): NimNode =
 
 when defined(specFromFile):
   from std/os import fileExists
-  proc getFuncName(name: string) : string =
+  proc getFuncName(name: string): string =
     ## Get the function name from a `string`
     ##
     var funcName = name.replace(".", "_").replace("\"", "")
@@ -661,7 +670,8 @@ when defined(specFromFile):
     ##  - float
     ##  - boolean
     ##
-    ## Example::
+    ## Example:
+    ## ```xml
     ##  <spec>
     ##    <method>
     ##      <name>download</name>
@@ -673,15 +683,17 @@ when defined(specFromFile):
     ##      </params>
     ##    </method>
     ##  </spec>
+    ## ```
     ##
-    ## The above example produces the following code::
+    ## The above example produces the following code:
+    ## ```nim
     ##  proc download(hash: string) : string
-    ##
+    ## ```
     ##
     if not fileExists(spec):
       error(spec & " does not exist")
 
-    var 
+    var
       specSource = staticRead(spec)
       specXml: XmlNode
 
@@ -715,7 +727,8 @@ when defined(specFromFile):
       specFunc.add(paramsNode)
       specFunc.add(newEmptyNode(), newEmptyNode())
       let funcbody = newStmtList()
-      funcBody.add(newAssignment(ident("result"), newCall(ident("getMethodCall"), paramsBody)))
+      funcBody.add(newAssignment(ident("result"), newCall(ident(
+          "getMethodCall"), paramsBody)))
       specFunc.add(funcBody)
       specs.add(specFunc)
 
@@ -732,13 +745,15 @@ macro xmlRpcSpec*(body: untyped): untyped =
   ## code so it makes it easy to get XML-RPC calls
   ## using basic Nim types.
   ##
-  ## The DSL is defined as follows::
+  ## The DSL is defined as follows:
+  ## ```
   ##  xmlRpcSpec:
   ##   name: <string>
   ##   [params:
   ##     <string_wo_quotes>:<basic Nim type>
   ##     ...
   ##   ]
+  ## ```
   ##
   ## where `<string>` is a double-quoted string and
   ## `<string_wo_quotes>` is a string without any quotes.
@@ -746,25 +761,33 @@ macro xmlRpcSpec*(body: untyped): untyped =
   ## This macro generates code according to
   ## the specifiction given.
   ##
-  ## Example::
+  ## Example:
+  ## ```nim
   ##  xmlRpcSpec:
   ##   name: "download_list"
   ##   name: "d.name"
   ##   params:
   ##     hash: string
+  ## ```
   ##
   ## The above example generates 2 functions with the names
   ## `download_list` and `d_name` (illegal characters within the
   ## function name are replaced with '_'). The first parameter
-  ## does not take any parameters so it's prototype is::
-  ##  proc download_list() : string
+  ## does not take any parameters so it's prototype is:
+  ## ```nim
+  ## proc download_list() : string
+  ## ```
   ##
-  ## `d_name` does and thus it's prototype is::
-  ##  proc d_name(hash: string) : string
+  ## `d_name` does and thus it's prototype is:
+  ##  ```nim
+  ## proc d_name(hash: string) : string
+  ## ```
   ##
-  ## You can then use the following functions in Nim code::
+  ## You can then use the following functions in Nim code:
+  ## ```nim
   ##  discard download_list()
   ##  discard d_name("2FDSF33DFDSJKB32423")
+  ## ```
   ##
   body.expectKind nnkStmtList
   var spec = newSeq[NimNode]()
@@ -825,7 +848,7 @@ macro xmlRpcSpec*(body: untyped): untyped =
     else:
       error("Invalid identifier", ident)
 
-  # Handle any leftover that have no params
+  # Handle any leftover that have no parameters
   if funcs.len > 0:
     let prev = funcs.pop()
     let name = prev[0]
@@ -909,10 +932,12 @@ proc serialize(this: XmlRpcType): XmlNode =
 
 proc `$`*(this: XmlRpcType): string =
   ## Get the string representation
-  ## of `XmlRpcType` as::
+  ## of `XmlRpcType` as
+  ## ```xml
   ##  <T>
   ##    value
   ##  </T>
+  ## ```
   ##
   result = $serialize(this)
 
@@ -927,8 +952,10 @@ proc getMethodCall*(name: string, params: varargs[XmlRpcType]): string =
   ## this method generating the XML-RPC method call string in the body. Use
   ## that instead of this method directly as it involves writing less code.
   ##
-  ## Example usage::
+  ## Example usage:
+  ## ```nim
   ##  getMethodCall("download_item")
+  ## ```
   ##
   let root = newElement("methodCall")
 
@@ -952,21 +979,16 @@ proc getMethodCall*(name: string, params: varargs[XmlRpcType]): string =
 
 when isMainModule:
   type
-    A = object
-      a: seq[string]
-      b: array[2, string]
-    B {.xrarray.} = object
-      a: string
-      b: int
-    C {.xrarray.} = object
-      a: int
-      b: seq[string]
-      c: array[2, string]
-    D = object
-      a: int
-      b: float
+    Person = object
+      id: Natural
+      age: Natural
+      name: string
+  xmlRpcSpec:
+    name: "new.person"
+    params:
+      person: Person
 
-  echo `from`(A(a: @["Mark", "Park", "Shark"], b: ["Hello", "World"]))
-  echo `from`(B(a:"Feed", b: 2))
-  echo `from`(C(a: 1, b: @["Feed"], c: ["Alan", "Mark"] ))
-  echo `from`(D(a: 1, b: 1.0))
+  let
+    person = new_person(Person(id: 1, age: 21, name: "Donnovan"))
+    xResponse = :!person
+    response = xResponse.response
