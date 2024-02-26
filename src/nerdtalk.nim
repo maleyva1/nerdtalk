@@ -835,7 +835,7 @@ macro xmlRpcSpec*(body: untyped): untyped =
         let param = newTree(nnkIdentDefs, paramNameNode, formalTypeNode,
             newEmptyNode())
         paramsNode.add(param)
-      # Params get converted into XmlRpc type by using macro `to`
+      # Params get converted into XmlRpc type by using macro `from`
         paramsBody.add(newCall(ident("from"), paramNameNode))
       currentFunc.add(paramsNode)
       # Function body
